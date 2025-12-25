@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Large Selection Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1000px;
+            margin: 40px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        #large-content {
+            background: #ffffff;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #28a745;
+            line-height: 1.6;
+        }
+        p {
+            margin: 8px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Large Selection Test</h1>
+    <p><strong>Purpose:</strong> Test performance with large selections (>50KB).</p>
+    <p><strong>Test:</strong> Select all content below and copy. Processing should complete in reasonable time.</p>
+    
+    <hr style="margin: 30px 0;">
+    
+    <div id="large-content">
+        <!-- Generate large content with formulas -->
+        <p>This is a large selection test. The content below contains many formulas to test performance.</p>
+        
+        <p>Quadratic formula: $x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}$</p>
+        <p>Pythagorean theorem: $a^2 + b^2 = c^2$</p>
+        <p>Euler's identity: $e^{i\pi} + 1 = 0$</p>
+        <p>Derivative: $\frac{d}{dx}(x^n) = nx^{n-1}$</p>
+        <p>Integral: $\int \sin(x) \, dx = -\cos(x) + C$</p>
+        <p>Binomial theorem: $(a + b)^n = \sum_{k=0}^{n} \binom{n}{k} a^{n-k} b^k$</p>
+        <p>Matrix multiplication: $c_{ij} = \sum_{k=1}^{n} a_{ik} b_{kj}$</p>
+        <p>Limit definition: $\lim_{x \to a} f(x) = L$</p>
+        <p>Compound interest: $A = P\left(1 + \frac{r}{n}\right)^{nt}$</p>
+        <p>Fourier series: $f(x) = \frac{a_0}{2} + \sum_{n=1}^{\infty} \left(a_n \cos(nx) + b_n \sin(nx)\right)$</p>
+        
+        <!-- Repeat content to make it large -->
+        <p>Repeated content section 1:</p>
+        <p>Formula 1: $\int_0^{\pi} \sin(x) dx = 2$</p>
+        <p>Formula 2: $\sum_{n=1}^{\infty} \frac{1}{n^2} = \frac{\pi^2}{6}$</p>
+        <p>Formula 3: $\prod_{n=1}^{\infty} \left(1 - \frac{1}{n^2}\right) = \frac{1}{2}$</p>
+        
+        <p>Repeated content section 2:</p>
+        <p>Formula 4: $\lim_{n \to \infty} \left(1 + \frac{1}{n}\right)^n = e$</p>
+        <p>Formula 5: $\Gamma(n) = (n-1)!$ for integer $n$</p>
+        <p>Formula 6: $\zeta(s) = \sum_{n=1}^{\infty} \frac{1}{n^s}$</p>
+        
+        <p>Repeated content section 3:</p>
+        <p>Formula 7: $\nabla \cdot \mathbf{F} = \frac{\partial F_x}{\partial x} + \frac{\partial F_y}{\partial y} + \frac{\partial F_z}{\partial z}$</p>
+        <p>Formula 8: $\nabla \times \mathbf{F} = \left(\frac{\partial F_z}{\partial y} - \frac{\partial F_y}{\partial z}\right)\mathbf{i} + \cdots$</p>
+        <p>Formula 9: $\oint_C \mathbf{F} \cdot d\mathbf{r} = \iint_S (\nabla \times \mathbf{F}) \cdot d\mathbf{S}$</p>
+        
+        <!-- Add more repeated content to exceed 50KB -->
+        <div id="repeated-content">
+            <!-- This will be filled with JavaScript to make it large -->
+        </div>
+    </div>
+    
+    <script>
+        // Generate repeated content to make selection large
+        const repeatedContent = document.getElementById('repeated-content');
+        const formulas = [
+            '$\\int_{-\\infty}^{\\infty} e^{-x^2} dx = \\sqrt{\\pi}$',
+            '$\\sum_{n=0}^{\\infty} \\frac{x^n}{n!} = e^x$',
+            '$\\prod_{k=1}^{n} k = n!$',
+            '$\\lim_{x \\to 0} \\frac{\\sin(x)}{x} = 1$',
+            '$\\frac{d}{dx}\\left(\\int_a^x f(t) dt\\right) = f(x)$',
+        ];
+        
+        let content = '';
+        for (let i = 0; i < 200; i++) {
+            const formula = formulas[i % formulas.length];
+            content += `<p>Section ${i+1}: Formula ${formula}</p>`;
+        }
+        repeatedContent.innerHTML = content;
+    </script>
+    
+    <hr style="margin: 30px 0;">
+    <p style="color: #666; font-size: 0.9em;"><strong>Note:</strong> This page contains >50KB of content with formulas to test large selection performance.</p>
+    
+    <!-- MathJax for rendering LaTeX formulas -->
+    <script>
+        window.MathJax = {
+            tex: {
+                inlineMath: [['$', '$'], ['\\(', '\\)']],
+                displayMath: [['\\[', '\\]']],
+                processEscapes: true
+            },
+            options: {
+                skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+            }
+        };
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" async></script>
+</body>
+</html>
+

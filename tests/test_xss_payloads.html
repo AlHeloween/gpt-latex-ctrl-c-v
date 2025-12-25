@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>XSS Prevention Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        #xss-content {
+            background: #ffffff;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #dc3545;
+            line-height: 1.6;
+        }
+        .warning {
+            background: #fff3cd;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>XSS Prevention Test</h1>
+    <p><strong>Purpose:</strong> Test that malicious HTML payloads are sanitized during copy operations.</p>
+    <div class="warning">
+        <strong>Warning:</strong> This page contains potentially malicious HTML for testing purposes only.
+    </div>
+    
+    <hr style="margin: 30px 0;">
+    
+    <div id="xss-content">
+        <p>Normal text with formula: $x^2 + y^2 = z^2$</p>
+        
+        <!-- XSS payloads (should be sanitized) -->
+        <p>Text with script tag: <script>alert('XSS')</script> should be removed</p>
+        <p>Text with onerror: <img src="invalid" onerror="alert('XSS')"> should be sanitized</p>
+        <p>Text with javascript: URL: <a href="javascript:alert('XSS')">Click me</a> should be sanitized</p>
+        <p>Text with onclick: <span onclick="alert('XSS')">Click me</span> should be sanitized</p>
+        
+        <!-- Valid formulas should still work -->
+        <p>Valid formula after XSS: $\int_0^{\infty} e^{-x^2} dx = \frac{\sqrt{\pi}}{2}$</p>
+        <p>Another formula: $\sum_{n=1}^{\infty} \frac{1}{n^2} = \frac{\pi^2}{6}$</p>
+    </div>
+    
+    <hr style="margin: 30px 0;">
+    <p style="color: #666; font-size: 0.9em;"><strong>Expected:</strong> XSS payloads should be sanitized, but formulas should still be converted to OMML/MathML.</p>
+    
+    <!-- MathJax for rendering LaTeX formulas -->
+    <script>
+        window.MathJax = {
+            tex: {
+                inlineMath: [['$', '$'], ['\\(', '\\)']],
+                displayMath: [['\\[', '\\]']],
+                processEscapes: true
+            },
+            options: {
+                skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+            }
+        };
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" async></script>
+</body>
+</html>
+
