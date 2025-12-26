@@ -48,7 +48,7 @@
       const isTestFile =
         filename.startsWith("test_") ||
         filename.endsWith("-test.html") ||
-        filename === "selection_example.html" ||
+        filename.startsWith("selection_example") ||
         filename === "debug-extension.html" ||
         filename === "diagnose_extension.html";
       return isInTestsDir || isTestFile;
@@ -324,6 +324,20 @@
       if (IS_TEST_PAGE) {
         try {
           document.documentElement.dataset.copyOfficeFormatLastCopyError = err && err.message ? err.message : String(err);
+        } catch {
+          // ignore
+        }
+        try {
+          lastClipboardPayload = {
+            error: err && err.message ? err.message : String(err),
+            errorType: err && err.name ? String(err.name) : (err && err.constructor ? err.constructor.name : "Error"),
+            plainText: selectionText || stripTags(selectionHtml),
+            selectionHtmlLength: selectionHtml ? selectionHtml.length : 0,
+            selectionTextLength: selectionText ? selectionText.length : 0,
+            via: "error",
+            timestamp: Date.now()
+          };
+          updateTestBridge();
         } catch {
           // ignore
         }
@@ -867,6 +881,23 @@
   }
 
   async function latexToMathml(latex, display = false) {
+    // Prefer background conversion when available (Firefox MV2 background page).
+    // This avoids site CSP blocking page-context script injection (e.g., Gemini).
+    try {
+      if (browser && browser.runtime && typeof browser.runtime.sendMessage === "function") {
+        const timeoutMs = Math.max(CONFIG.MATHJAX_LOAD_TIMEOUT || 10000, CONFIG.LATEX_TO_MATHML_TIMEOUT || 5000);
+        const res = await Promise.race([
+          browser.runtime.sendMessage({ type: "LATEX_TO_MATHML", latex, display: !!display }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("Background MathJax timeout")), timeoutMs)),
+        ]);
+        if (res && res.ok && typeof res.mathml === "string") {
+          return res.mathml;
+        }
+      }
+    } catch {
+      // Ignore and fall back to page-bridge conversion.
+    }
+
     await ensureMathTools();
 
     function convertViaDomEvents() {
@@ -1042,6 +1073,28 @@
         try {
           if (!el || !el.getAttribute) continue;
           if (isExcluded(el, exclude)) continue;
+
+          // Prefer extracting MathML already present in KaTeX-rendered markup.
+          // This avoids CSP-dependent MathJax loading on complex sites (e.g., Gemini) and is faster.
+          const existingMath = el.querySelector("math") || el.querySelector(".katex-mathml math");
+          if (existingMath && existingMath.outerHTML) {
+            const span = document.createElement("span");
+            span.className = "math-mathml";
+            span.style.cssText = "display:inline-block;";
+            appendStringAsNodes(span, existingMath.outerHTML);
+            el.replaceWith(span);
+            attrConverted += 1;
+            if (IS_TEST_PAGE) {
+              try {
+                document.documentElement.dataset.copyOfficeFormatAttrMathConverted = String(attrConverted);
+                document.documentElement.dataset.copyOfficeFormatAttrMathUsedExistingMathML = "true";
+              } catch {
+                // ignore
+              }
+            }
+            continue;
+          }
+
           const latexRaw = el.getAttribute("data-math");
           const latex = latexRaw != null ? String(latexRaw).trim() : "";
           if (!latex) continue;
