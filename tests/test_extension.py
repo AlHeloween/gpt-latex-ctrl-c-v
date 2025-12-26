@@ -64,8 +64,36 @@ class ExtensionTester:
     async def load_test_page(self):
         """Load the test HTML file."""
         file_url = f"file://{self.test_html.absolute()}"
-        await self.page.goto(file_url)
-        await self.page.wait_for_load_state("networkidle")
+        await self.page.goto(file_url, wait_until="commit")
+
+        # Prove the DOM is usable by mutating it and reading the mutation back.
+        # Do not use "networkidle" as a proxy for readiness.
+        await self.page.wait_for_selector("body", timeout=5000, state="attached")
+        await self.page.wait_for_function(
+            "() => document.readyState === 'interactive' || document.readyState === 'complete'",
+            timeout=5000,
+        )
+        probe_value = await self.page.evaluate(
+            """
+            () => {
+                const value = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+                let el = document.getElementById("__pw_dom_probe");
+                if (!el) {
+                    el = document.createElement("div");
+                    el.id = "__pw_dom_probe";
+                    el.style.display = "none";
+                    document.documentElement.appendChild(el);
+                }
+                el.textContent = value;
+                return value;
+            }
+            """
+        )
+        await self.page.wait_for_function(
+            """(expected) => document.getElementById("__pw_dom_probe")?.textContent === expected""",
+            arg=probe_value,
+            timeout=5000,
+        )
         
         # Wait for extension content script to load
         await asyncio.sleep(1)
@@ -88,8 +116,35 @@ class ExtensionTester:
             helper_code = test_helper_path.read_text()
             await self.page.add_init_script(helper_code)
             # Reload to apply the script
-            await self.page.reload()
-            await self.page.wait_for_load_state("networkidle")
+            await self.page.reload(wait_until="commit")
+
+            # Prove DOM is usable again after reload (no "networkidle").
+            await self.page.wait_for_selector("body", timeout=5000, state="attached")
+            await self.page.wait_for_function(
+                "() => document.readyState === 'interactive' || document.readyState === 'complete'",
+                timeout=5000,
+            )
+            probe_value = await self.page.evaluate(
+                """
+                () => {
+                    const value = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+                    let el = document.getElementById("__pw_dom_probe");
+                    if (!el) {
+                        el = document.createElement("div");
+                        el.id = "__pw_dom_probe";
+                        el.style.display = "none";
+                        document.documentElement.appendChild(el);
+                    }
+                    el.textContent = value;
+                    return value;
+                }
+                """
+            )
+            await self.page.wait_for_function(
+                """(expected) => document.getElementById("__pw_dom_probe")?.textContent === expected""",
+                arg=probe_value,
+                timeout=5000,
+            )
             await asyncio.sleep(1)  # Wait for extension to re-initialize
         
         print(f"✓ Test page loaded: {file_url}")

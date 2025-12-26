@@ -45,6 +45,11 @@ const CONFIG = {
   }
 };
 
+// Expose for content-script.js (which checks window.CONFIG first).
+if (typeof window !== 'undefined') {
+  window.CONFIG = CONFIG;
+}
+
 // Export for use in content script
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = CONFIG;

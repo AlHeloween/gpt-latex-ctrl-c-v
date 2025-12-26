@@ -52,6 +52,7 @@ async def run_super_tests():
     # Create tester with all options enabled
     tester = ComprehensiveExtensionTester(
         EXTENSION_PATH,
+        browser_name="chromium",
         headless=False,  # Visible browser
         debug=True,      # Verbose output
         use_http_server=False,  # Use file:// URLs

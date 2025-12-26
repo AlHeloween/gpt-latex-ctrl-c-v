@@ -1,18 +1,50 @@
+const browserApi = globalThis.browser ?? globalThis.chrome;
+const isChromeCallbackApi = !!globalThis.chrome && !globalThis.browser;
+
 // Debug mode - set to false in production
-const DEBUG = true; // ENABLED FOR TROUBLESHOOTING
+const DEBUG = false;
 const log = DEBUG ? console.log.bind(console, "[Copy as Office Format Background]") : () => {};
 const logError = console.error.bind(console, "[Copy as Office Format Background]");
+
+function chromePromise(callWithCallback) {
+  return new Promise((resolve, reject) => {
+    try {
+      callWithCallback((result) => {
+        const err = browserApi?.runtime?.lastError;
+        if (err) reject(err);
+        else resolve(result);
+      });
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
+
+function contextMenusRemove(id) {
+  if (!isChromeCallbackApi) return browserApi.contextMenus.remove(id);
+  return chromePromise((cb) => browserApi.contextMenus.remove(id, cb));
+}
+
+function contextMenusCreate(options) {
+  if (!isChromeCallbackApi) return browserApi.contextMenus.create(options);
+  return chromePromise((cb) => browserApi.contextMenus.create(options, cb));
+}
+
+function tabsSendMessage(tabId, message) {
+  if (!isChromeCallbackApi) return browserApi.tabs.sendMessage(tabId, message);
+  return chromePromise((cb) => browserApi.tabs.sendMessage(tabId, message, cb));
+}
 
 async function createContextMenu() {
   try {
     // Try to remove existing menu first (in case of reload)
     try {
-      await browser.contextMenus.remove("copy-office-format");
+      await contextMenusRemove("copy-office-format");
     } catch (e) {
       // Menu doesn't exist, that's fine
     }
     
-    await browser.contextMenus.create({
+    await contextMenusCreate({
       id: "copy-office-format",
       title: "Copy as Office Format",
       contexts: ["selection"]
@@ -23,10 +55,10 @@ async function createContextMenu() {
   }
 }
 
-browser.runtime.onInstalled.addListener(createContextMenu);
-browser.runtime.onStartup.addListener(createContextMenu);
+browserApi.runtime.onInstalled.addListener(createContextMenu);
+browserApi.runtime.onStartup.addListener(createContextMenu);
 
-browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+browserApi.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "EXTENSION_READY") {
     if (DEBUG) {
       log("Extension ready notification received from content script");
@@ -37,7 +69,7 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   return false;
 });
 
-browser.contextMenus.onClicked.addListener((info, tab) => {
+browserApi.contextMenus.onClicked.addListener((info, tab) => {
   log("🔵 Context menu clicked!");
   log("   Menu item ID:", info.menuItemId);
   log("   Tab ID:", tab ? tab.id : "NO TAB");
@@ -51,7 +83,7 @@ browser.contextMenus.onClicked.addListener((info, tab) => {
     }
     
     log("📤 Sending COPY_OFFICE_FORMAT message to tab", tab.id);
-    browser.tabs.sendMessage(tab.id, { type: "COPY_OFFICE_FORMAT" }).then((response) => {
+    tabsSendMessage(tab.id, { type: "COPY_OFFICE_FORMAT" }).then((response) => {
       log("✅ Message sent successfully to tab", tab.id);
       log("   Response:", response);
     }).catch((err) => {

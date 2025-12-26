@@ -3,7 +3,8 @@
 # Using uv package manager
 
 echo "Checking uv environment..."
-python --version
+uv --version
+uv run python --version
 
 echo ""
 echo "Running FULLY AUTOMATED test suite..."
@@ -12,7 +13,10 @@ echo ""
 echo "Usage: ./run_tests.sh [--headless] [--debug]"
 echo ""
 
-python test_automated.py "$@"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR"
+
+uv run python test_automated.py "$@"
 
 if [ $? -eq 0 ]; then
     echo ""
@@ -22,4 +26,3 @@ else
     echo "Some tests failed. Check output above."
     exit 1
 fi
-

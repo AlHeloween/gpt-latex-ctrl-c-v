@@ -4,13 +4,17 @@ Fully Automated Test Suite for "Copy as Office Format" Extension
 This test runs 100% automatically - no manual steps required.
 
 Usage:
-    python test_automated.py [--headless] [--debug]
+    python test_automated.py [--browser chromium|firefox] [--headless] [--debug]
 """
 
 import asyncio
 import argparse
 import json
 import sys
+import threading
+import tempfile
+import shutil
+from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from playwright.async_api import async_playwright, BrowserContext, Page
 
@@ -19,13 +23,22 @@ PROJECT_ROOT = Path(__file__).parent.parent
 EXTENSION_PATH = PROJECT_ROOT
 TEST_HTML = PROJECT_ROOT / "tests" / "gemini-conversation-test.html"
 
+CHROMIUM_EXTENSION_PATH = PROJECT_ROOT / "dist" / "chromium"
+
+
+class _QuietHandler(SimpleHTTPRequestHandler):
+    def log_message(self, fmt, *args):
+        return
+
 
 class AutomatedExtensionTester:
-    def __init__(self, extension_path: Path, test_html: Path, headless: bool = False, debug: bool = False):
+    def __init__(self, extension_path: Path, test_html: Path, browser_name: str = "chromium", headless: bool = False, debug: bool = False):
         self.extension_path = extension_path
         self.test_html = test_html
+        self.browser_name = browser_name
         self.headless = headless
         self.debug = debug
+        self._playwright = None
         self.context: BrowserContext = None
         self.page: Page = None
         self.results = {
@@ -34,6 +47,9 @@ class AutomatedExtensionTester:
             "tests_failed": 0,
             "errors": []
         }
+        self._httpd = None
+        self._http_thread = None
+        self._user_data_dir: Path | None = None
     
     def log(self, message: str, level: str = "info"):
         """Log message with optional debug output."""
@@ -50,21 +66,60 @@ class AutomatedExtensionTester:
         
         print(f"{prefix} {message}")
 
+    def _ensure_chromium_extension(self) -> Path:
+        """Build the Chromium MV3 extension dir if missing."""
+        try:
+            manifest = CHROMIUM_EXTENSION_PATH / "manifest.json"
+            if manifest.exists():
+                return CHROMIUM_EXTENSION_PATH
+        except Exception:
+            pass
+
+        # Build via local helper (writes to dist/chromium/)
+        from tools.build_chromium_extension import build  # type: ignore
+
+        built = build(CHROMIUM_EXTENSION_PATH)
+        return built
+
     async def setup(self):
-        """Set up Playwright with Firefox and extension."""
-        self.log("Setting up Firefox with extension...", "info")
-        playwright = await async_playwright().start()
-        
-        extension_path_str = str(self.extension_path.absolute())
+        """Set up Playwright with a browser and the extension."""
+        if self.browser_name == "chromium":
+            extension_dir = self._ensure_chromium_extension()
+            extension_path_str = str(extension_dir.absolute())
+        else:
+            extension_path_str = str(self.extension_path.absolute())
+
+        self.log(f"Setting up {self.browser_name} with extension...", "info")
         self.log(f"Extension path: {extension_path_str}", "debug")
-        
-        self.context = await playwright.firefox.launch_persistent_context(
-            user_data_dir=Path.home() / ".playwright-firefox-test",
-            headless=self.headless,
-            args=[
-                f"--load-extension={extension_path_str}",
-            ]
-        )
+
+        self._playwright = await async_playwright().start()
+
+        if self.browser_name == "chromium":
+            if self.headless:
+                self.log("Chromium extension tests require headful mode; forcing headless=False", "warning")
+                self.headless = False
+
+            self._user_data_dir = Path(tempfile.mkdtemp(prefix="playwright-chromium-ext-"))
+            self.context = await self._playwright.chromium.launch_persistent_context(
+                user_data_dir=self._user_data_dir,
+                headless=False,
+                args=[
+                    f"--disable-extensions-except={extension_path_str}",
+                    f"--load-extension={extension_path_str}",
+                    "--disable-features=ExtensionManifestV2Disabled",
+                ],
+            )
+        elif self.browser_name == "firefox":
+            # Note: Playwright+Firefox has known limitations around content-script injection.
+            self.context = await self._playwright.firefox.launch_persistent_context(
+                user_data_dir=Path.home() / ".playwright-firefox-extension-test",
+                headless=self.headless,
+                args=[
+                    f"--load-extension={extension_path_str}",
+                ],
+            )
+        else:
+            raise ValueError(f"Unsupported browser: {self.browser_name}")
         
         # Get or create page
         pages = self.context.pages
@@ -73,14 +128,55 @@ class AutomatedExtensionTester:
         else:
             self.page = await self.context.new_page()
         
-        self.log("Firefox launched with extension", "success")
+        self.log(f"{self.browser_name} launched with extension", "success")
 
     async def load_test_page(self):
         """Load the test HTML page."""
-        file_url = f"file://{self.test_html.absolute()}"
-        self.log(f"Loading test page: {file_url}", "info")
-        await self.page.goto(file_url, wait_until="domcontentloaded")
-        await self.page.wait_for_load_state("networkidle", timeout=5000)
+        if self.browser_name == "chromium":
+            # Chromium extensions don't reliably run on file:// without user toggles.
+            # Serve the repo over localhost for predictable content-script injection.
+            handler = lambda *a, **kw: _QuietHandler(*a, directory=str(PROJECT_ROOT), **kw)
+            self._httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+            port = self._httpd.server_address[1]
+            self._http_thread = threading.Thread(target=self._httpd.serve_forever, daemon=True)
+            self._http_thread.start()
+
+            url = f"http://127.0.0.1:{port}/tests/{self.test_html.name}"
+            self.log(f"Loading test page: {url}", "info")
+            await self.page.goto(url, wait_until="domcontentloaded")
+        else:
+            file_url = f"file://{self.test_html.absolute()}"
+            self.log(f"Loading test page: {file_url}", "info")
+            await self.page.goto(file_url, wait_until="domcontentloaded")
+
+        # Prove the DOM is usable by mutating it and reading the mutation back.
+        # This avoids "networkidle" hangs (e.g., analytics, CDN scripts, long polling).
+        await self.page.wait_for_selector("body", timeout=5000, state="attached")
+        await self.page.wait_for_function(
+            "() => document.readyState === 'interactive' || document.readyState === 'complete'",
+            timeout=5000,
+        )
+        probe_value = await self.page.evaluate(
+            """
+            () => {
+                const value = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+                let el = document.getElementById("__pw_dom_probe");
+                if (!el) {
+                    el = document.createElement("div");
+                    el.id = "__pw_dom_probe";
+                    el.style.display = "none";
+                    document.documentElement.appendChild(el);
+                }
+                el.textContent = value;
+                return value;
+            }
+            """
+        )
+        await self.page.wait_for_function(
+            """(expected) => document.getElementById("__pw_dom_probe")?.textContent === expected""",
+            arg=probe_value,
+            timeout=5000,
+        )
         self.log("Test page loaded", "success")
 
     async def verify_extension_loaded(self) -> bool:
@@ -95,8 +191,9 @@ class AutomatedExtensionTester:
         for attempt in range(attempts):
             is_loaded = await self.page.evaluate("""
                 () => {
-                    return typeof browser !== 'undefined' && 
-                           typeof browser.runtime !== 'undefined';
+                    return document.documentElement &&
+                           document.documentElement.dataset &&
+                           document.documentElement.dataset.copyOfficeFormatExtensionLoaded === "true";
                 }
             """)
             
@@ -108,9 +205,9 @@ class AutomatedExtensionTester:
                 await asyncio.sleep(check_interval)
         
         # Extension not loaded - this means wrong setup
-        self.log("Extension content script not found", "error")
+        self.log("Extension content script not found (DOM marker missing)", "error")
         self.log("  This indicates the extension is not properly loaded", "error")
-        self.log("  Check: --load-extension flag, manifest.json, or use about:debugging", "error")
+        self.log("  Check: extension loading flags and manifest compatibility", "error")
         self.results["errors"].append("Extension content script not loaded - check extension loading")
         return False
 
@@ -149,30 +246,40 @@ class AutomatedExtensionTester:
         
         return selected_text
 
-    async def trigger_copy_via_message(self) -> bool:
-        """Trigger copy by sending message directly to content script."""
+    async def trigger_copy_via_test_hook(self, selector: str | None = None) -> bool:
+        """Trigger copy via the test-only DOM hook exposed on file:// test pages."""
         self.log("Triggering copy function...", "info")
         
         try:
             result = await self.page.evaluate("""
-                async () => {
-                    if (typeof browser !== 'undefined' && browser.runtime) {
-                        try {
-                            await browser.runtime.sendMessage({type: 'COPY_OFFICE_FORMAT'});
-                            return {success: true};
-                        } catch (e) {
-                            return {success: false, error: e.message};
-                        }
-                    }
-                    return {success: false, error: 'Extension API not available'};
+                async ({ selector }) => {
+                    const isTest = document.documentElement &&
+                                   document.documentElement.dataset &&
+                                   document.documentElement.dataset.copyOfficeFormatExtensionLoaded === "true";
+                    if (!isTest) return { success: false, error: "Test hook not available (DOM marker missing)" };
+
+                    const requestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+                    const outcome = await new Promise((resolve) => {
+                        const onResult = (event) => {
+                            const detail = (event && event.detail) ? event.detail : {};
+                            if (detail.requestId !== requestId) return;
+                            window.removeEventListener("__copyOfficeFormatTestResult", onResult);
+                            resolve(detail);
+                        };
+                        window.addEventListener("__copyOfficeFormatTestResult", onResult);
+                        window.dispatchEvent(new CustomEvent("__copyOfficeFormatTestRequest", { detail: { requestId, selector } }));
+                        setTimeout(() => {
+                            window.removeEventListener("__copyOfficeFormatTestResult", onResult);
+                            resolve({ requestId, ok: false, error: "timeout" });
+                        }, 10000);
+                    });
+
+                    return { success: !!outcome.ok, error: outcome.error || null };
                 }
-            """)
+            """, {"selector": selector})
             
             if result.get("success"):
-                self.log("Copy message sent successfully", "success")
-                # Wait for operation to complete (max 0.5 seconds)
-                # If it takes longer, the commands are wrong
-                await asyncio.sleep(0.5)
+                self.log("Copy request completed", "success")
                 return True
             else:
                 error_msg = result.get('error', 'Unknown error')
@@ -185,27 +292,18 @@ class AutomatedExtensionTester:
             return False
 
     async def verify_clipboard_content(self) -> dict:
-        """Verify clipboard contains expected content with enhanced verification."""
-        self.log("Verifying clipboard content...", "info")
-        
+        """Verify last copy payload captured by the content-script test hook."""
+        self.log("Verifying copy payload...", "info")
+
         clipboard_data = await self.page.evaluate("""
-            async () => {
+            () => {
+                const bridge = document.getElementById("__copyOfficeFormatTestBridge");
+                if (!bridge || !bridge.value) return { error: "No captured payload (bridge missing)" };
                 try {
-                    if (!navigator.clipboard || !navigator.clipboard.read) {
-                        return {error: 'Clipboard API not available'};
-                    }
-                    
-                    const items = await navigator.clipboard.read();
-                    const result = {};
-                    for (const item of items) {
-                        for (const type of item.types) {
-                            const blob = await item.getType(type);
-                            result[type] = await blob.text();
-                        }
-                    }
-                    return result;
+                    const parsed = JSON.parse(bridge.value);
+                    return parsed.lastClipboard || { error: "No lastClipboard in bridge" };
                 } catch (e) {
-                    return {error: e.toString(), errorName: e.name};
+                    return { error: "Failed to parse bridge payload" };
                 }
             }
         """)
@@ -217,24 +315,24 @@ class AutomatedExtensionTester:
             "contains_omml": False,
             "contains_mathml": False,
             "has_cf_html_format": False,
-            "cf_html_utf16_compliant": False,
+            "cf_html_utf8_compliant": False,
             "no_raw_latex": True,
-            "error": None
+            "error": None,
         }
         
         if "error" in clipboard_data:
             verification["error"] = clipboard_data.get("error")
-            self.log(f"Clipboard read error: {verification['error']}", "warning")
+            self.log(f"Payload error: {verification['error']}", "warning")
             return verification
         
         if not clipboard_data:
-            self.log("Clipboard is empty", "error")
+            self.log("No payload captured", "error")
             return verification
         
         verification["has_content"] = True
         
-        # Check for HTML
-        html_content = clipboard_data.get("text/html", "")
+        # Check for HTML (CF_HTML payload)
+        html_content = clipboard_data.get("cfhtml", "") or ""
         if html_content:
             verification["has_html"] = True
             self.log(f"Clipboard contains HTML ({len(html_content)} chars)", "success")
@@ -254,21 +352,21 @@ class AutomatedExtensionTester:
             if "Version:1.0" in html_content and "StartHTML:" in html_content:
                 verification["has_cf_html_format"] = True
                 self.log("Clipboard has CF_HTML format", "success")
-                
-                # Enhanced: Verify UTF-16 encoding compliance
+
+                # Verify CF_HTML offsets match UTF-8 byte lengths.
                 import re
-                start_html_match = re.search(r'StartHTML:(\d+)', html_content)
+
+                start_html_match = re.search(r"StartHTML:(\d+)", html_content)
                 if start_html_match:
                     header_end = html_content.find("<!--StartFragment-->")
                     if header_end > 0:
                         header_text = html_content[:header_end]
-                        # Calculate UTF-16 byte length
-                        utf16_len = sum(4 if ord(c) > 0xFFFF else 2 for c in header_text)
+                        utf8_len = len(header_text.encode("utf-8"))
                         actual_offset = int(start_html_match.group(1))
                         # Allow small tolerance
-                        if abs(actual_offset - utf16_len) <= 2:
-                            verification["cf_html_utf16_compliant"] = True
-                            self.log("CF_HTML format uses UTF-16 encoding (verified)", "success")
+                        if abs(actual_offset - utf8_len) <= 2:
+                            verification["cf_html_utf8_compliant"] = True
+                            self.log("CF_HTML offsets match UTF-8 bytes (verified)", "success")
             
             # Check for raw LaTeX (should not be present if converted)
             import re
@@ -279,11 +377,12 @@ class AutomatedExtensionTester:
                 self.log("No raw LaTeX found (formulas likely converted)", "success")
         
         # Check for plain text
-        if "text/plain" in clipboard_data:
+        plain_text = clipboard_data.get("plainText", "") if isinstance(clipboard_data, dict) else ""
+        if plain_text:
             verification["has_plain_text"] = True
-            text_len = len(clipboard_data['text/plain'])
+            text_len = len(plain_text)
             self.log(f"Clipboard contains plain text ({text_len} chars)", "success")
-            self.log(f"  Text preview: {clipboard_data['text/plain'][:50]}...", "debug")
+            self.log(f"  Text preview: {plain_text[:50]}...", "debug")
         
         return verification
 
@@ -312,7 +411,7 @@ class AutomatedExtensionTester:
                 return False
             
             # Trigger copy
-            if not await self.trigger_copy_via_message():
+            if not await self.trigger_copy_via_test_hook(selector):
                 self.results["tests_failed"] += 1
                 return False
             
@@ -425,12 +524,34 @@ class AutomatedExtensionTester:
         """Clean up resources."""
         if self.context:
             await self.context.close()
+            self.context = None
+
+        if self._playwright:
+            await self._playwright.stop()
+            self._playwright = None
+
+        if getattr(self, "_httpd", None):
+            try:
+                self._httpd.shutdown()
+                self._httpd.server_close()
+            except Exception:
+                pass
+            self._httpd = None
+
+        if self._user_data_dir:
+            try:
+                shutil.rmtree(self._user_data_dir, ignore_errors=True)
+            except Exception:
+                pass
+            self._user_data_dir = None
         print("\n✓ Cleanup completed")
 
 
 async def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(description="Fully automated extension test suite")
+    parser.add_argument("--browser", choices=["chromium", "firefox"], default="chromium",
+                        help="Browser to use for automated testing (default: chromium)")
     parser.add_argument("--headless", action="store_true", help="Run in headless mode")
     parser.add_argument("--debug", action="store_true", help="Enable debug output")
     args = parser.parse_args()
@@ -446,6 +567,7 @@ async def main():
     tester = AutomatedExtensionTester(
         EXTENSION_PATH, 
         TEST_HTML, 
+        browser_name=args.browser,
         headless=args.headless,
         debug=args.debug
     )

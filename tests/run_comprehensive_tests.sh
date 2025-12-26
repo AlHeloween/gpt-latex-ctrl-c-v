@@ -6,9 +6,9 @@ echo "Comprehensive Extension Test Suite"
 echo "============================================================"
 echo ""
 
-# Check if Python is available
-if ! command -v python &> /dev/null; then
-    echo "ERROR: Python is not installed or not in PATH"
+# Check if uv is available
+if ! command -v uv &> /dev/null; then
+    echo "ERROR: uv is not installed or not in PATH"
     exit 1
 fi
 
@@ -16,7 +16,10 @@ fi
 echo "Running comprehensive tests..."
 echo ""
 
-python tests/test_comprehensive.py "$@"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR"
+
+uv run python test_comprehensive.py "$@"
 
 EXIT_CODE=$?
 
@@ -33,4 +36,3 @@ else
     echo "============================================================"
     exit 0
 fi
-

@@ -1,4 +1,5 @@
 (() => {
+  const browser = globalThis.browser ?? globalThis.chrome;
   // Configuration - can be overridden by constants.js if loaded
   // Note: Check for global CONFIG first (from constants.js), then use default
   let CONFIG;
@@ -25,11 +26,82 @@
   }
   
   // Debug mode - set to false in production
-  const DEBUG = true; // Set to true for debugging - ENABLED FOR TROUBLESHOOTING
+  const DEBUG = false;
   
   const log = DEBUG ? console.log.bind(console, "[Copy as Office Format]") : () => {};
   const logError = console.error.bind(console, "[Copy as Office Format]");
   const logWarn = DEBUG ? console.warn.bind(console, "[Copy as Office Format]") : () => {};
+
+  const IS_TEST_PAGE = (() => {
+    try {
+      if (typeof window === "undefined") return false;
+      const isLocalHost =
+        window.location.hostname === "127.0.0.1" ||
+        window.location.hostname === "localhost" ||
+        window.location.hostname === "";
+      const isSupportedProtocol = window.location.protocol === "file:" || (isLocalHost && window.location.protocol.startsWith("http"));
+      if (!isSupportedProtocol) return false;
+
+      const normalizedPath = window.location.pathname.replace(/\\/g, "/").toLowerCase();
+      const isInTestsDir = normalizedPath.includes("/tests/") || normalizedPath.includes("/_ff_ext_copy/tests/");
+      const filename = normalizedPath.split("/").pop() || "";
+      const isTestFile =
+        filename.startsWith("test_") ||
+        filename.endsWith("-test.html") ||
+        filename === "selection_example.html" ||
+        filename === "debug-extension.html" ||
+        filename === "diagnose_extension.html";
+      return isInTestsDir || isTestFile;
+    } catch {
+      return false;
+    }
+  })();
+
+  let lastClipboardPayload = null;
+
+  function ensureTestBridge() {
+    if (!IS_TEST_PAGE || typeof document === "undefined") return null;
+
+    try {
+      document.documentElement.dataset.copyOfficeFormatExtensionLoaded = "true";
+      document.documentElement.dataset.copyOfficeFormatVersion = "0.2.0";
+      try {
+        if (browser && browser.runtime && typeof browser.runtime.getURL === "function") {
+          document.documentElement.dataset.copyOfficeFormatMathJaxUrl = browser.runtime.getURL("mathjax/tex-mml-chtml.js");
+        }
+      } catch {
+        // ignore
+      }
+
+      let bridge = document.getElementById("__copyOfficeFormatTestBridge");
+      if (!bridge) {
+        bridge = document.createElement("textarea");
+        bridge.id = "__copyOfficeFormatTestBridge";
+        bridge.setAttribute("aria-hidden", "true");
+        bridge.style.cssText = "position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;pointer-events:none;";
+        document.documentElement.appendChild(bridge);
+      }
+      return bridge;
+    } catch {
+      return null;
+    }
+  }
+
+  function updateTestBridge() {
+    const bridge = ensureTestBridge();
+    if (!bridge) return;
+    try {
+      bridge.value = JSON.stringify({ lastClipboard: lastClipboardPayload });
+      try {
+        document.documentElement.dataset.copyOfficeFormatBridgeUpdated = String(Date.now());
+        document.documentElement.dataset.copyOfficeFormatBridgeValueLength = String(bridge.value.length);
+      } catch {
+        // ignore
+      }
+    } catch {
+      // ignore
+    }
+  }
 
   let mathJaxLoadPromise = null;
   let xsltPromise = null;
@@ -167,7 +239,6 @@
     }
 
     try {
-      await ensureMathTools();
       
       // If we have HTML, preserve it and convert LaTeX within it
       let processedHtml = selectionHtml || escapeHtml(selectionText);
@@ -192,7 +263,7 @@
               const after = selectionText.substring(texIndex + tex.length, Math.min(selectionText.length, texIndex + tex.length + 2));
               isDisplay = (before === "$$" && after === "$$") || before.endsWith("\\[") || after.startsWith("\\]");
             }
-            const mathml = await MathJax.tex2mmlPromise(tex, { display: isDisplay });
+            const mathml = await latexToMathml(tex, isDisplay);
             mathmlParts.push(mathml);
             const omml = await latexToOmml(tex);
             ommlParts.push(omml);
@@ -216,6 +287,33 @@
         return;
       }
       
+      if (IS_TEST_PAGE && typeof window !== 'undefined' && window.__copyOfficeFormatExtension) {
+        window.__copyOfficeFormatExtension.lastPayload = {
+          html: processedHtml,
+          plainText,
+          timestamp: Date.now()
+        };
+      }
+      if (IS_TEST_PAGE) {
+        try {
+          const wrapped = wrapHtmlDoc(processedHtml);
+          lastClipboardPayload = {
+            cfhtml: buildCfHtml(wrapped, location.href),
+            wrappedHtml: wrapped,
+            plainText,
+            via: "pre-write",
+            timestamp: Date.now()
+          };
+        } catch (e) {
+          try {
+            document.documentElement.dataset.copyOfficeFormatBridgeError = e && e.message ? e.message : String(e);
+          } catch {
+            // ignore
+          }
+        }
+        updateTestBridge();
+      }
+
       log("Calling writeClipboard...");
       await writeClipboard(processedHtml, plainText);
       log("✅ Copy completed successfully");
@@ -223,6 +321,13 @@
     } catch (err) {
       logError("❌ Copy failed:", err);
       logError("Error stack:", err.stack);
+      if (IS_TEST_PAGE) {
+        try {
+          document.documentElement.dataset.copyOfficeFormatLastCopyError = err && err.message ? err.message : String(err);
+        } catch {
+          // ignore
+        }
+      }
       notify(CONFIG.MESSAGES.COPY_FAILED + " " + (err.message || "Unknown error"));
       // Fallback: copy plain text
       try {
@@ -325,7 +430,207 @@
     }).filter(Boolean);
   }
 
-  async function ensureMathTools() {
+	  async function ensureMathTools() {
+	    // CSP-friendly: no inline scripts. Always prefer loading a web_accessible_resources page bridge.
+	    if (!mathJaxLoadPromise) {
+	      mathJaxLoadPromise = Promise.race([
+	        new Promise((resolve, reject) => {
+	          const root = document.documentElement;
+	          const getStatus = () => (root && root.dataset ? root.dataset.copyOfficeFormatMathJaxStatus : null);
+	          const getError = () => (root && root.dataset ? root.dataset.copyOfficeFormatMathJaxError : null);
+
+	          const status = getStatus();
+	          if (status === "ready") return resolve();
+	          if (status === "error") return reject(new Error(getError() || "MathJax bridge error"));
+
+	          const src = browser.runtime.getURL("page-mathjax-bridge.js");
+	          const already = document.querySelector(`script[src="${src}"]`);
+	          if (!already) {
+	            const s = document.createElement("script");
+	            s.src = src;
+	            s.async = true;
+	            s.onload = () => {};
+	            s.onerror = () => reject(new Error("Failed to load page-mathjax-bridge.js"));
+	            (document.head || document.documentElement).appendChild(s);
+	          }
+
+	          const poll = () => {
+	            const st = getStatus();
+	            if (st === "ready") return resolve();
+	            if (st === "error") return reject(new Error(getError() || "MathJax failed to load"));
+	            setTimeout(poll, 50);
+	          };
+	          poll();
+	        }),
+	        new Promise((_, reject) => {
+	          setTimeout(() => reject(new Error(CONFIG.MESSAGES.MATHJAX_LOAD_TIMEOUT || "MathJax load timeout")), CONFIG.MATHJAX_LOAD_TIMEOUT);
+	        }),
+	      ]).catch((err) => {
+	        mathJaxLoadPromise = null; // allow retry
+	        throw err;
+	      });
+	    }
+
+	    await mathJaxLoadPromise;
+
+	    if (!xsltPromise) {
+	      xsltPromise = fetch(browser.runtime.getURL("assets/mathml2omml.xsl"))
+	        .then((r) => {
+	          if (!r.ok) throw new Error(`${CONFIG.MESSAGES.XSLT_FETCH_FAILED || "XSLT fetch failed"}: ${r.status}`);
+	          return r.text();
+	        })
+	        .then((txt) => {
+	          const doc = new DOMParser().parseFromString(txt, "application/xml");
+	          const parseError = doc.querySelector("parsererror");
+	          if (parseError) {
+	            throw new Error((CONFIG.MESSAGES.XSLT_PARSE_ERROR || "XSLT parse error") + ": " + parseError.textContent);
+	          }
+	          return doc;
+	        });
+	    }
+	    await xsltPromise;
+	    return;
+
+	    // Test pages: use a DOM-event bridge so it works in Chromium isolated worlds.
+	    if (IS_TEST_PAGE) {
+	      if (!mathJaxLoadPromise) {
+	        const mathJaxUrl = browser.runtime.getURL("mathjax/tex-mml-chtml.js");
+
+        mathJaxLoadPromise = Promise.race([
+          new Promise((resolve, reject) => {
+            const injectScript = document.createElement("script");
+            injectScript.textContent = `
+              (function() {
+                try {
+                  var root = document.documentElement;
+                  function setStatus(status, error) {
+                    try {
+                      root.dataset.copyOfficeFormatMathJaxStatus = status;
+                      if (error) root.dataset.copyOfficeFormatMathJaxError = String(error);
+                    } catch (e) {}
+                  }
+
+                  if (!window.__copyOfficeFormatMathJaxTestBridgeInstalled) {
+                    window.__copyOfficeFormatMathJaxTestBridgeInstalled = true;
+                    document.addEventListener("__copyOfficeFormatMathJaxRequest", function(ev) {
+                      var d = ev && ev.detail ? ev.detail : {};
+                      var requestId = d.requestId || null;
+                      var latex = d.latex != null ? String(d.latex) : "";
+                      var display = !!d.display;
+
+                      function respond(ok, payload) {
+                        try {
+                          document.dispatchEvent(new CustomEvent("__copyOfficeFormatMathJaxResponse", {
+                            detail: Object.assign({ requestId: requestId, ok: ok }, payload || {})
+                          }));
+                        } catch (e) {}
+                      }
+
+                      (async function() {
+                        try {
+                          if (!window.MathJax) throw new Error("MathJax not available");
+                          if (window.MathJax.startup && window.MathJax.startup.promise) {
+                            await window.MathJax.startup.promise;
+                          }
+                          if (typeof window.MathJax.tex2mmlPromise !== "function") throw new Error("MathJax methods not available");
+                          var mathml = await window.MathJax.tex2mmlPromise(latex, { display: display });
+                          respond(true, { mathml: mathml });
+                        } catch (e) {
+                          respond(false, { error: e && e.message ? e.message : String(e) });
+                        }
+                      })();
+                    });
+                  }
+
+                  if (window.MathJax) {
+                    setStatus("ready");
+                    return;
+                  }
+
+                  setStatus("loading");
+                  var s = document.createElement("script");
+                  s.src = ${JSON.stringify(mathJaxUrl)};
+                  s.async = true;
+	                  s.onload = function() {
+	                    var attempts = 0;
+	                    function check() {
+	                      attempts++;
+	                      if (window.MathJax) {
+	                        if (window.MathJax.startup && window.MathJax.startup.promise) {
+	                          window.MathJax.startup.promise
+	                            .then(function() { setStatus("ready"); try { s.remove(); } catch (e) {} })
+	                            .catch(function(err) { setStatus("error", err && err.message ? err.message : err); try { s.remove(); } catch (e) {} });
+	                        } else if (typeof window.MathJax.tex2mmlPromise === "function") {
+	                          setStatus("ready");
+	                          try { s.remove(); } catch (e) {}
+	                        } else {
+	                          setStatus("error", "MathJax methods not available");
+	                          try { s.remove(); } catch (e) {}
+	                        }
+	                        return;
+	                      }
+	                      if (attempts > 200) {
+	                        setStatus("error", "Timeout");
+	                        try { s.remove(); } catch (e) {}
+	                        return;
+	                      }
+	                      setTimeout(check, 50);
+	                    }
+	                    setTimeout(check, 0);
+	                  };
+	                  s.onerror = function() { setStatus("error", "Load failed"); try { s.remove(); } catch (e) {} };
+                  (document.head || document.documentElement).appendChild(s);
+                } catch (e) {
+                  try { document.documentElement.dataset.copyOfficeFormatMathJaxStatus = "error"; } catch (e2) {}
+                }
+              })();
+            `;
+
+            (document.head || document.documentElement).appendChild(injectScript);
+            injectScript.remove();
+
+            const poll = () => {
+              const root = document.documentElement;
+              const status = root && root.dataset ? root.dataset.copyOfficeFormatMathJaxStatus : null;
+              const error = root && root.dataset ? root.dataset.copyOfficeFormatMathJaxError : null;
+              if (status === "ready") return resolve();
+              if (status === "error") return reject(new Error(error || "MathJax failed to load"));
+              setTimeout(poll, 50);
+            };
+
+            poll();
+          }),
+          new Promise((_, reject) => {
+            setTimeout(() => reject(new Error(CONFIG.MESSAGES.MATHJAX_LOAD_TIMEOUT || "MathJax load timeout")), CONFIG.MATHJAX_LOAD_TIMEOUT);
+          })
+        ]).catch((err) => {
+          mathJaxLoadPromise = null; // allow retry
+          throw err;
+        });
+      }
+
+      await mathJaxLoadPromise;
+
+      // XSLT loading (same as normal path)
+      if (!xsltPromise) {
+        xsltPromise = fetch(browser.runtime.getURL("assets/mathml2omml.xsl"))
+          .then((r) => {
+            if (!r.ok) throw new Error(`${CONFIG.MESSAGES.XSLT_FETCH_FAILED || "XSLT fetch failed"}: ${r.status}`);
+            return r.text();
+          })
+          .then((txt) => {
+            const doc = new DOMParser().parseFromString(txt, "application/xml");
+            const parseError = doc.querySelector("parsererror");
+            if (parseError) {
+              throw new Error((CONFIG.MESSAGES.XSLT_PARSE_ERROR || "XSLT parse error") + ": " + parseError.textContent);
+            }
+            return doc;
+          });
+      }
+
+      await xsltPromise;
+      return;
+    }
     // Use promise instead of boolean flag to prevent race conditions
     if (!mathJaxLoadPromise) {
       log("📦 Starting MathJax load...");
@@ -562,6 +867,26 @@
   }
 
   async function latexToMathml(latex, display = false) {
+    await ensureMathTools();
+
+    function convertViaDomEvents() {
+      const requestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+      return new Promise((resolve, reject) => {
+        const handler = (event) => {
+          const detail = event && event.detail ? event.detail : {};
+          if (detail.requestId !== requestId) return;
+          document.removeEventListener("__copyOfficeFormatMathJaxResponse", handler);
+
+          if (detail.ok && typeof detail.mathml === "string") resolve(detail.mathml);
+          else reject(new Error(detail.error || "MathJax conversion failed"));
+        };
+
+        document.addEventListener("__copyOfficeFormatMathJaxResponse", handler);
+        document.dispatchEvent(new CustomEvent("__copyOfficeFormatMathJaxRequest", { detail: { requestId, latex, display } }));
+      });
+    }
+
     // Add timeout wrapper for conversion
     // Use bridge function injected into page context (MathJax runs in page context, not isolated content script context)
     if (typeof window.__mathjaxConvert === 'function') {
@@ -583,7 +908,12 @@
           )
         ]);
       } else {
-        throw new Error("MathJax bridge not available and MathJax not accessible");
+        return Promise.race([
+          convertViaDomEvents(),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error(CONFIG.MESSAGES.LATEX_CONVERSION_TIMEOUT || "LaTeX to MathML conversion timeout")), CONFIG.LATEX_TO_MATHML_TIMEOUT)
+          )
+        ]);
       }
     }
   }
@@ -635,7 +965,13 @@
   }
 
   async function convertLatexInHtml(html) {
-    if (!html || (!html.includes("$") && !html.includes("\\[") && !html.includes("$$"))) {
+    if (
+      !html ||
+      (!html.includes("$") &&
+        !html.includes("\\[") &&
+        !html.includes("$$") &&
+        !html.includes("data-math"))
+    ) {
       return { visualHtml: html, ommlHtml: html };
     }
 
@@ -690,6 +1026,66 @@
     return { visualHtml: html, ommlHtml: ommlRoot.innerHTML };
 
     async function processRoot(root) {
+      // Convert KaTeX-style elements that preserve source TeX as attributes.
+      // Example: <span class="math-inline" data-math="\\mathbb{R}^n">...</span>
+      const attrMathNodes = Array.from(root.querySelectorAll("[data-math]"));
+      if (IS_TEST_PAGE) {
+        try {
+          document.documentElement.dataset.copyOfficeFormatAttrMathFound = String(attrMathNodes.length);
+          document.documentElement.dataset.copyOfficeFormatAttrMathConverted = "0";
+        } catch {
+          // ignore
+        }
+      }
+      let attrConverted = 0;
+      for (const el of attrMathNodes) {
+        try {
+          if (!el || !el.getAttribute) continue;
+          if (isExcluded(el, exclude)) continue;
+          const latexRaw = el.getAttribute("data-math");
+          const latex = latexRaw != null ? String(latexRaw).trim() : "";
+          if (!latex) continue;
+
+          const cls = (el.getAttribute("class") || "").toLowerCase();
+          const isDisplay = cls.includes("math-display") || cls.includes("math-block");
+          const cacheKey = isDisplay ? `display:${latex}` : `inline:${latex}`;
+          let conv = cache.get(cacheKey);
+          if (!conv) {
+            try {
+              const mathml = await latexToMathml(latex, isDisplay);
+              conv = { mathml };
+              cache.set(cacheKey, conv);
+            } catch (e) {
+              logWarn("attribute latex convert failed", e);
+              if (IS_TEST_PAGE) {
+                try {
+                  document.documentElement.dataset.copyOfficeFormatAttrMathLastError = e && e.message ? e.message : String(e);
+                } catch {
+                  // ignore
+                }
+              }
+              continue;
+            }
+          }
+
+          const span = document.createElement("span");
+          span.className = "math-mathml";
+          span.style.cssText = "display:inline-block;";
+          appendStringAsNodes(span, conv.mathml);
+          el.replaceWith(span);
+          attrConverted += 1;
+          if (IS_TEST_PAGE) {
+            try {
+              document.documentElement.dataset.copyOfficeFormatAttrMathConverted = String(attrConverted);
+            } catch {
+              // ignore
+            }
+          }
+        } catch (_) {
+          // keep the original element if conversion fails
+        }
+      }
+
       const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
       const textNodes = [];
       while (walker.nextNode()) textNodes.push(walker.currentNode);
@@ -749,13 +1145,7 @@
           if (!conv) {
             try {
               const mathml = await latexToMathml(seg.latex, seg.isDisplay);
-              let omml = "";
-              try {
-                omml = await latexToOmml(seg.latex);
-              } catch (_) {
-                omml = mathml;
-              }
-              conv = { mathml, omml };
+              conv = { mathml };
               cache.set(cacheKey, conv);
             } catch (e) {
               logWarn("latex convert failed", e);
@@ -764,9 +1154,9 @@
             }
           }
           const span = document.createElement("span");
-          span.className = "math-omml";
-          span.style.cssText = "mso-element:omath; display:inline-block;";
-          appendStringAsNodes(span, conv.omml || conv.mathml);
+          span.className = "math-mathml";
+          span.style.cssText = "display:inline-block;";
+          appendStringAsNodes(span, conv.mathml);
           frag.appendChild(span);
         }
 
@@ -841,6 +1231,21 @@
     log("writeClipboard called");
     log("HTML content length:", htmlContent ? htmlContent.length : 0);
     log("Plain text length:", plainText ? plainText.length : 0);
+
+    // Test pages: capture payload deterministically and avoid real clipboard permission prompts.
+    if (IS_TEST_PAGE) {
+      const wrapped = wrapHtmlDoc(htmlContent);
+      const cfhtml = buildCfHtml(wrapped, location.href);
+      lastClipboardPayload = {
+        cfhtml,
+        wrappedHtml: wrapped,
+        plainText,
+        via: "test-bridge",
+        timestamp: Date.now()
+      };
+      updateTestBridge();
+      return;
+    }
     
     // Feature detection
     if (!navigator.clipboard || !navigator.clipboard.write) {
@@ -851,6 +1256,25 @@
     if (typeof ClipboardItem === 'undefined') {
       logWarn("ClipboardItem not available, using fallback");
       const wrapped = wrapHtmlDoc(htmlContent);
+      if (IS_TEST_PAGE && typeof window !== 'undefined' && window.__copyOfficeFormatExtension) {
+        window.__copyOfficeFormatExtension.lastClipboard = {
+          cfhtml: buildCfHtml(wrapped, location.href),
+          wrappedHtml: wrapped,
+          plainText,
+          via: "execCommand-fallback",
+          timestamp: Date.now()
+        };
+      }
+      if (IS_TEST_PAGE) {
+        lastClipboardPayload = {
+          cfhtml: buildCfHtml(wrapped, location.href),
+          wrappedHtml: wrapped,
+          plainText,
+          via: "execCommand-fallback",
+          timestamp: Date.now()
+        };
+        updateTestBridge();
+      }
       fallbackExecCopy(wrapped, plainText);
       return;
     }
@@ -858,10 +1282,35 @@
     const wrapped = wrapHtmlDoc(htmlContent);
     const cfhtml = buildCfHtml(wrapped, location.href);
     log("CF_HTML length:", cfhtml.length);
+
+    if (IS_TEST_PAGE && typeof window !== 'undefined' && window.__copyOfficeFormatExtension) {
+      window.__copyOfficeFormatExtension.lastClipboard = {
+        cfhtml,
+        wrappedHtml: wrapped,
+        plainText,
+        via: "navigator.clipboard.write",
+        timestamp: Date.now()
+      };
+    }
+    if (IS_TEST_PAGE) {
+      lastClipboardPayload = {
+        cfhtml,
+        wrappedHtml: wrapped,
+        plainText,
+        via: "navigator.clipboard.write",
+        timestamp: Date.now()
+      };
+      updateTestBridge();
+    }
     
+    // IMPORTANT:
+    // - The Web Clipboard API expects *HTML*, not Windows CF_HTML headers.
+    // - Browsers on Windows will translate "text/html" to the OS "HTML Format" clipboard entry.
+    // If we put CF_HTML (Version:1.0/StartHTML/StartFragment...) into "text/html", apps like Word
+    // can end up pasting the header verbatim as plain text.
     const payload = {
-      "text/html": new Blob([cfhtml], { type: "text/html" }),
-      "text/plain": new Blob([plainText], { type: "text/plain" })
+      "text/html": new Blob([wrapped], { type: "text/html" }),
+      "text/plain": new Blob([plainText], { type: "text/plain" }),
     };
     
     try {
@@ -890,21 +1339,14 @@
   }
 
   function buildCfHtml(fullHtml, sourceUrl = "") {
-    // CF_HTML specification requires UTF-16 encoding for byte offsets
+    // CF_HTML offsets are byte offsets of the encoded payload.
+    // Use UTF-8 byte lengths to match how Windows clipboard consumers (e.g., Word) parse CF_HTML.
     const startFragMarker = "<!--StartFragment-->";
     const endFragMarker = "<!--EndFragment-->";
     const html = `${startFragMarker}${fullHtml}${endFragMarker}`;
-    
-    // Calculate UTF-16 byte length (CF_HTML spec requirement)
-    function utf16ByteLength(str) {
-      let length = 0;
-      for (let i = 0; i < str.length; i++) {
-        const code = str.charCodeAt(i);
-        // Surrogate pairs (code > 0xFFFF) take 4 bytes, others take 2 bytes
-        length += code > 0xFFFF ? 4 : 2;
-      }
-      return length;
-    }
+
+    const encoder = new TextEncoder();
+    const utf8ByteLength = (str) => encoder.encode(str).length;
     
     const srcLine = sourceUrl ? `SourceURL:${sourceUrl}\r\n` : "";
     const placeholder = "0000000000";
@@ -916,12 +1358,12 @@
       `EndFragment:${placeholder}\r\n` +
       srcLine;
 
-    // Calculate offsets using UTF-16 encoding
-    const headerBytes = utf16ByteLength(header);
+    // Calculate offsets using UTF-8 byte lengths.
+    const headerBytes = utf8ByteLength(header);
     const startHTML = headerBytes;
-    const startFragment = startHTML + utf16ByteLength(startFragMarker);
-    const endFragment = startFragment + utf16ByteLength(fullHtml);
-    const endHTML = startHTML + utf16ByteLength(html);
+    const startFragment = startHTML + utf8ByteLength(startFragMarker);
+    const endFragment = startFragment + utf8ByteLength(fullHtml);
+    const endHTML = startHTML + utf8ByteLength(html);
 
     const pad = (n) => n.toString().padStart(10, "0");
     header =
@@ -977,12 +1419,7 @@
         throw new Error("execCommand('copy') returned false");
       }
       
-      // Best-effort plain text copy
-      try {
-        navigator.clipboard.writeText(plain);
-      } catch (clipboardErr) {
-        logWarn("Plain text clipboard write failed:", clipboardErr);
-      }
+      // Do not overwrite the clipboard with writeText(): it can erase richer formats (HTML).
     } catch (err) {
       logError("Fallback copy failed:", err);
       // Ensure cleanup
@@ -1045,10 +1482,18 @@
   // Always expose extension marker for testing (not just in DEBUG mode)
   // This allows automated tests to reliably detect if extension is loaded
   if (typeof window !== 'undefined') {
+    if (IS_TEST_PAGE) {
+      ensureTestBridge();
+      updateTestBridge();
+    }
+
     window.__copyOfficeFormatExtension = {
       version: '0.2.0',
       loaded: true,
       ready: true,
+      isTestPage: IS_TEST_PAGE,
+      lastPayload: null,
+      lastClipboard: null,
       checkStatus: function() {
         return {
           extensionLoaded: typeof browser !== 'undefined' && typeof browser.runtime !== 'undefined',
@@ -1066,6 +1511,47 @@
         };
       }
     };
+
+    if (IS_TEST_PAGE) {
+      window.addEventListener("__copyOfficeFormatTestRequest", async (event) => {
+        const detail = (event && event.detail) ? event.detail : {};
+        const requestId = detail.requestId || null;
+
+        try {
+          if (detail.selector && typeof detail.selector === "string") {
+            const element = document.querySelector(detail.selector);
+            if (element) {
+              const range = document.createRange();
+              range.selectNodeContents(element);
+              const selection = window.getSelection();
+              selection.removeAllRanges();
+              selection.addRange(range);
+              try {
+                document.documentElement.dataset.copyOfficeFormatTestSelectorFound = "true";
+                document.documentElement.dataset.copyOfficeFormatTestSelectionLength = String(selection.toString().length);
+              } catch {
+                // ignore
+              }
+            } else {
+              try {
+                document.documentElement.dataset.copyOfficeFormatTestSelectorFound = "false";
+              } catch {
+                // ignore
+              }
+            }
+          }
+
+          await handleCopy();
+          updateTestBridge();
+          window.dispatchEvent(new CustomEvent("__copyOfficeFormatTestResult", { detail: { requestId, ok: true } }));
+        } catch (e) {
+          updateTestBridge();
+          window.dispatchEvent(new CustomEvent("__copyOfficeFormatTestResult", {
+            detail: { requestId, ok: false, error: e && e.message ? e.message : String(e) }
+          }));
+        }
+      });
+    }
     
     if (DEBUG) {
       console.log('[Copy as Office Format] Extension content script loaded');

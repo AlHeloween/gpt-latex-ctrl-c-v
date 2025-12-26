@@ -1,0 +1,30 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "copy-as-office-format"
+version = "0.2.0"
+description = "Dev/test harness for the Copy as Office Format Firefox extension."
+requires-python = ">=3.10"
+dependencies = [
+  "playwright==1.57.0",
+  "pyperclip==1.11.0",
+  "selenium==4.39.0"
+]
+
+[tool.uv]
+# uv manages the virtual environment and lockfile; no extra configuration needed here.
+
+[tool.hatch.build.targets.wheel]
+include = [
+  "tests/**",
+  "tools/**",
+  "assets/**",
+  "icons/**",
+  "mathjax/**",
+  "*.js",
+  "*.json",
+  "*.md",
+  "manifest.chromium.json"
+]

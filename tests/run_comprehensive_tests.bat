@@ -6,10 +6,13 @@ echo Comprehensive Extension Test Suite
 echo ============================================================
 echo.
 
-REM Check if Python is available
-python --version >nul 2>&1
+setlocal
+pushd "%~dp0"
+
+REM Check if uv is available
+uv --version >nul 2>&1
 if errorlevel 1 (
-    echo ERROR: Python is not installed or not in PATH
+    echo ERROR: uv is not installed or not in PATH
     exit /b 1
 )
 
@@ -17,19 +20,21 @@ REM Run comprehensive tests
 echo Running comprehensive tests...
 echo.
 
-python tests\test_comprehensive.py %*
+uv run python test_comprehensive.py %*
 
 if errorlevel 1 (
     echo.
     echo ============================================================
     echo Tests completed with failures
     echo ============================================================
+    popd
     exit /b 1
 ) else (
     echo.
     echo ============================================================
     echo All tests passed!
     echo ============================================================
+    popd
     exit /b 0
 )
 

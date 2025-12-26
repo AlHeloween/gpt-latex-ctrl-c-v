@@ -2,8 +2,12 @@
 REM Run fully automated tests for the extension on Windows
 REM Using uv package manager
 
+setlocal
+pushd "%~dp0"
+
 echo Checking uv environment...
-python --version
+uv --version
+uv run python --version
 
 echo.
 echo Running FULLY AUTOMATED test suite...
@@ -12,7 +16,7 @@ echo.
 echo Usage: run_tests.bat [--headless] [--debug]
 echo.
 
-python test_automated.py %*
+uv run python test_automated.py %*
 
 if %ERRORLEVEL% EQU 0 (
     echo.
@@ -22,5 +26,6 @@ if %ERRORLEVEL% EQU 0 (
     echo Some tests failed. Check output above.
 )
 
+popd
 pause
 

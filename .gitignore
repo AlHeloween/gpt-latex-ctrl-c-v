@@ -1,0 +1,21 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+
+# Playwright/automation artifacts
+.playwright-*/
+playwright-report/
+test-results/
+
+# Python/uv environments
+.venv/
+uv.lock
+dist/
+tmp-user-data/
+artifacts/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.vscode/
