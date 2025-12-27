@@ -64,7 +64,7 @@ async def _wait_extension_marker(page) -> None:
         """
         () => document.documentElement?.dataset?.copyOfficeFormatExtensionLoaded === "true"
         """,
-        timeout=5000,
+        timeout=15_000,
     )
 
 
@@ -124,11 +124,15 @@ async def run(
     out_json: Path,
     headless: bool,
     timeout_ms: int,
+    show_ui: bool = False,
 ) -> None:
     # Build/ensure Chromium extension output exists.
     chromium_dir = PROJECT_ROOT / "dist" / "chromium"
     if not chromium_dir.exists():
-        raise RuntimeError("Missing dist/chromium; run tools/build_chromium_extension.py first.")
+        # Deterministic fallback: build it from current sources.
+        from tools.build_chromium_extension import build  # type: ignore
+
+        build(chromium_dir)
 
     handler = lambda *a, **kw: _QuietHandler(*a, directory=str(PROJECT_ROOT), **kw)  # noqa: E731
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
@@ -142,6 +146,18 @@ async def run(
     user_data_dir = PROJECT_ROOT / "tmp-user-data" / f"capture-{time.time_ns()}"
 
     async with async_playwright() as p:
+        # Chromium extensions generally require headful mode. When running headful in CI/dev,
+        # keep the window off-screen by default so it doesn't disrupt the user.
+        extra_args: list[str] = []
+        if (not headless) and (not show_ui):
+            extra_args.extend(
+                [
+                    "--window-position=-32000,-32000",
+                    "--window-size=800,600",
+                    "--start-minimized",
+                ]
+            )
+
         context = await p.chromium.launch_persistent_context(
             user_data_dir=str(user_data_dir),
             headless=headless,
@@ -155,10 +171,29 @@ async def run(
                 "--disable-default-apps",
                 "--disable-sync",
                 "--disable-translate",
+                *extra_args,
             ],
         )
         try:
             page = context.pages[0] if context.pages else await context.new_page()
+            # XSS fixtures intentionally trigger dialogs; dismiss deterministically.
+            try:
+                def _swallow_task_result(t):  # noqa: ANN001 - callback signature
+                    try:
+                        _ = t.exception()
+                    except Exception:
+                        pass
+
+                def _on_dialog(d):  # noqa: ANN001 - Playwright dialog object
+                    try:
+                        task = asyncio.create_task(d.dismiss())
+                        task.add_done_callback(_swallow_task_result)
+                    except Exception:
+                        pass
+
+                page.on("dialog", _on_dialog)
+            except Exception:
+                pass
             await page.goto(url, wait_until="domcontentloaded")
             await _dom_prove_ready(page)
             await _wait_extension_marker(page)
@@ -167,7 +202,10 @@ async def run(
             out_json.parent.mkdir(parents=True, exist_ok=True)
             out_json.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         finally:
-            await context.close()
+            try:
+                await context.close()
+            except Exception:
+                pass
             try:
                 httpd.shutdown()
                 httpd.server_close()
@@ -181,11 +219,16 @@ async def run(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Capture extension copy payload via DOM test bridge.")
-    parser.add_argument("--path", default="", help="Repo-relative HTML path (e.g., selection_example.html or tests/gemini-conversation-test.html).")
+    parser.add_argument(
+        "--path",
+        default="",
+        help="Repo-relative HTML path (e.g., examples/selection_example_static.html or examples/gemini-conversation-test.html).",
+    )
     parser.add_argument("--test-html", default="gemini-conversation-test.html", help="(Deprecated) HTML fixture filename in tests/.")
     parser.add_argument("--selector", default="message-content:first-of-type", help="CSS selector to select/copy.")
     parser.add_argument("--out", default=str(PROJECT_ROOT / "artifacts" / "extension_payload.json"))
     parser.add_argument("--headless", action="store_true", help="Run headless (Chromium extensions usually require headful).")
+    parser.add_argument("--show-ui", action="store_true", help="Show the Chromium window (default keeps it off-screen).")
     parser.add_argument("--timeout-ms", type=int, default=30000, help="Timeout waiting for copy completion.")
     args = parser.parse_args()
 
@@ -201,6 +244,7 @@ def main() -> int:
             out_json=Path(args.out),
             headless=headless,
             timeout_ms=int(args.timeout_ms),
+            show_ui=bool(args.show_ui),
         )
     )
     print(f"OK: wrote {args.out}")

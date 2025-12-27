@@ -8,12 +8,17 @@ __pycache__/
 playwright-report/
 test-results/
 
+# Rust
+rust/**/target/
+
 # Python/uv environments
 .venv/
 uv.lock
 dist/
 tmp-user-data/
 artifacts/
+test_artefacts/
+test_results/
 
 # OS/editor noise
 .DS_Store

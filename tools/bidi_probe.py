@@ -130,6 +130,11 @@ def main() -> int:
         help="CSS selector for target subtree artifact (default: body).",
     )
     parser.add_argument(
+        "--require-subtree",
+        action="store_true",
+        help="Fail the run if the target selector is not found (target_subtree.html would be empty).",
+    )
+    parser.add_argument(
         "--expected-subtree",
         default="",
         help="Optional path to expected subtree HTML (exact string match). Writes diff.txt on mismatch.",
@@ -165,6 +170,23 @@ def main() -> int:
 
     # Keep the run deterministic: prefer a clean temporary profile unless the user opts out.
     # Selenium will create a fresh profile by default; do not reuse persistent state.
+
+    # Selenium 4.39.0 expects log.entryAdded JavaScript events to include "stackTrace".
+    # Firefox can omit it; monkeypatch defensively so BiDi console capture doesn't crash threads.
+    try:
+        from selenium.webdriver.common.bidi.log import JavaScriptLogEntry  # noqa: WPS433 - runtime patch is intentional
+
+        _orig_from_json = JavaScriptLogEntry.from_json.__func__  # type: ignore[attr-defined]
+
+        def _from_json_safe(cls, json_data):  # noqa: ANN001 - third-party shape
+            if isinstance(json_data, dict) and "stackTrace" not in json_data:
+                json_data = dict(json_data)
+                json_data["stackTrace"] = None
+            return _orig_from_json(cls, json_data)
+
+        JavaScriptLogEntry.from_json = classmethod(_from_json_safe)  # type: ignore[assignment]
+    except Exception:
+        pass
 
     console_entries: list[dict[str, Any]] = []
     js_errors: list[dict[str, Any]] = []
@@ -249,7 +271,12 @@ def main() -> int:
             """,
             args.selector,
         )
+        subtree_found = isinstance(subtree_html, str) and len(subtree_html) > 0
         subtree_html = subtree_html if isinstance(subtree_html, str) else ""
+        if not subtree_found:
+            log(f"[postcondition] WARN: selector not found (empty target_subtree.html): selector={args.selector!r}")
+            if args.require_subtree:
+                log("[postcondition] FAIL: --require-subtree set and selector was not found")
 
         _write_text(page_html_path, page_html)
         _write_text(subtree_html_path, subtree_html)
@@ -273,6 +300,7 @@ def main() -> int:
         extracted = {
             "url": args.url,
             "selector": args.selector,
+            "subtree_found": bool(subtree_found),
             "headless": bool(args.headless),
             "deadline_s": args.deadline_s,
             "poll_s": args.poll_s,
@@ -295,6 +323,9 @@ def main() -> int:
         if not (ok_ready and ok_body and ok_probe):
             log(f"[postcondition] FAIL: one or more predicates failed; artifacts at {artifacts_dir}")
             return 4
+        if args.require_subtree and not subtree_found:
+            log(f"[postcondition] FAIL: selector not found; artifacts at {artifacts_dir}")
+            return 5
 
         log(f"[postcondition] OK: artifacts at {artifacts_dir}")
         return 0
@@ -307,4 +338,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

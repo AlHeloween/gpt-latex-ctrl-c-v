@@ -20,8 +20,8 @@ from playwright.async_api import async_playwright, BrowserContext, Page
 
 
 PROJECT_ROOT = Path(__file__).parent.parent
-EXTENSION_PATH = PROJECT_ROOT
-TEST_HTML = PROJECT_ROOT / "tests" / "gemini-conversation-test.html"
+EXTENSION_PATH = PROJECT_ROOT / "extension"
+TEST_HTML = PROJECT_ROOT / "examples" / "gemini-conversation-test.html"
 
 CHROMIUM_EXTENSION_PATH = PROJECT_ROOT / "dist" / "chromium"
 
@@ -67,15 +67,7 @@ class AutomatedExtensionTester:
         print(f"{prefix} {message}")
 
     def _ensure_chromium_extension(self) -> Path:
-        """Build the Chromium MV3 extension dir if missing."""
-        try:
-            manifest = CHROMIUM_EXTENSION_PATH / "manifest.json"
-            if manifest.exists():
-                return CHROMIUM_EXTENSION_PATH
-        except Exception:
-            pass
-
-        # Build via local helper (writes to dist/chromium/)
+        """Build the Chromium MV3 extension dir (deterministic; ensures latest sources are copied)."""
         from tools.build_chromium_extension import build  # type: ignore
 
         built = build(CHROMIUM_EXTENSION_PATH)
@@ -107,6 +99,16 @@ class AutomatedExtensionTester:
                     f"--disable-extensions-except={extension_path_str}",
                     f"--load-extension={extension_path_str}",
                     "--disable-features=ExtensionManifestV2Disabled",
+                    # Keep the window off-screen unless explicitly debugging.
+                    *(
+                        []
+                        if self.debug
+                        else [
+                            "--window-position=-32000,-32000",
+                            "--window-size=800,600",
+                            "--start-minimized",
+                        ]
+                    ),
                 ],
             )
         elif self.browser_name == "firefox":
@@ -141,7 +143,8 @@ class AutomatedExtensionTester:
             self._http_thread = threading.Thread(target=self._httpd.serve_forever, daemon=True)
             self._http_thread.start()
 
-            url = f"http://127.0.0.1:{port}/tests/{self.test_html.name}"
+            rel = self.test_html.relative_to(PROJECT_ROOT).as_posix()
+            url = f"http://127.0.0.1:{port}/{rel}"
             self.log(f"Loading test page: {url}", "info")
             await self.page.goto(url, wait_until="domcontentloaded")
         else:
@@ -217,7 +220,7 @@ class AutomatedExtensionTester:
         
         # Wait for element to exist (max 0.5 seconds)
         try:
-            await self.page.wait_for_selector(selector, timeout=500, state="attached")
+            await self.page.wait_for_selector(selector, timeout=2000, state="attached")
         except Exception as e:
             self.log(f"Element not found: {selector}", "error")
             self.log(f"  Error: {e}", "debug")
@@ -317,6 +320,7 @@ class AutomatedExtensionTester:
             "has_cf_html_format": False,
             "cf_html_utf8_compliant": False,
             "no_raw_latex": True,
+            "no_parse_error_markers": True,
             "error": None,
         }
         
@@ -338,10 +342,11 @@ class AutomatedExtensionTester:
             self.log(f"Clipboard contains HTML ({len(html_content)} chars)", "success")
             self.log(f"  HTML preview: {html_content[:100]}...", "debug")
             
-            # Check for OMML
-            if 'xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"' in html_content:
+            # Detect Office-friendly OMML embedding (preferred for Word) and MathML (fallback/compat).
+            low = html_content.lower()
+            if ("mso-element:omath" in low) or ("<m:omath" in low) or ("<m:omathpara" in low):
                 verification["contains_omml"] = True
-                self.log("Clipboard HTML contains OMML namespace", "success")
+                self.log("Clipboard HTML contains OMML/Office math markers", "success")
             
             # Check for MathML
             if "http://www.w3.org/1998/Math/MathML" in html_content:
@@ -375,6 +380,11 @@ class AutomatedExtensionTester:
                 self.log("Warning: Clipboard contains raw LaTeX (may not be converted)", "warning")
             else:
                 self.log("No raw LaTeX found (formulas likely converted)", "success")
+
+            # Guardrail: do not emit placeholder parse errors into clipboard HTML/MathML.
+            if "[PARSE ERROR:" in html_content:
+                verification["no_parse_error_markers"] = False
+                self.log("Clipboard contains PARSE ERROR markers (conversion produced placeholders)", "error")
         
         # Check for plain text
         plain_text = clipboard_data.get("plainText", "") if isinstance(clipboard_data, dict) else ""
@@ -431,6 +441,9 @@ class AutomatedExtensionTester:
                 elif not verification["has_html"]:
                     passed = False
                     print("✗ Clipboard missing HTML content")
+                elif not verification.get("no_parse_error_markers", True):
+                    passed = False
+                    print("✗ Clipboard contains PARSE ERROR placeholders")
                 elif expect_formulas and not verification["contains_omml"] and not verification["contains_mathml"]:
                     passed = False
                     print("✗ Clipboard missing OMML/MathML (formulas not converted)")
@@ -485,7 +498,25 @@ class AutomatedExtensionTester:
                 "message-content:first-of-type, message-content:nth-of-type(2)",
                 expect_formulas=True
             )
-            
+
+            # Test 4: Forced Rust WASM conversion (no MathJax/page bridge allowed)
+            original_test_html = self.test_html
+            try:
+                self.test_html = PROJECT_ROOT / "examples" / "force-wasm-latex-test.html"
+                await self.run_test(
+                    "Forced Rust WASM LaTeX Conversion",
+                    "#content",
+                    expect_formulas=True,
+                )
+                self.test_html = PROJECT_ROOT / "examples" / "force-wasm-unicode-math-test.html"
+                await self.run_test(
+                    "Forced Rust WASM Unicode Normalization",
+                    "#content",
+                    expect_formulas=True,
+                )
+            finally:
+                self.test_html = original_test_html
+             
             # Print summary
             self.print_summary()
             

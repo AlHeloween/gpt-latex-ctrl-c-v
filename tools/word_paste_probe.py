@@ -139,7 +139,7 @@ def normalize_cfhtml_utf8(cfhtml: str) -> str:
     return header + html
 
 
-def word_paste_to_docx(*, out_docx: Path, visible: bool) -> None:
+def word_paste_to_docx(*, out_docx: Path, visible: bool, timeout_s: float = 60.0) -> None:
     out_docx.parent.mkdir(parents=True, exist_ok=True)
     out_docx = out_docx.resolve()
     out_ps = str(out_docx).replace("'", "''")
@@ -169,6 +169,7 @@ try {{
             check=True,
             capture_output=True,
             text=True,
+            timeout=float(timeout_s) if timeout_s else None,
         )
     except subprocess.CalledProcessError as e:
         stdout = (e.stdout or "").strip()
@@ -182,6 +183,8 @@ try {{
             ]
         )
         raise RuntimeError(details) from e
+    except subprocess.TimeoutExpired as e:
+        raise RuntimeError(f"PowerShell Word automation timed out after {timeout_s}s") from e
 
 
 def extract_document_xml(docx_path: Path, out_xml: Path) -> str:

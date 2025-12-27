@@ -16,13 +16,36 @@ echo ""
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
-uv run python test_automated.py "$@"
+echo "Building Rust WASM (tex_to_mathml.wasm)..."
+uv run python ../tools/build_rust_wasm.py
 
-if [ $? -eq 0 ]; then
+echo ""
+uv run python test_automated.py "$@"
+TESTS_RC=$?
+
+echo ""
+echo "Running Word example verification (skips if Word is not available)..."
+uv run python test_word_examples.py
+WORD_RC=$?
+
+echo ""
+echo "Generating docx outputs from examples to test_results/docx..."
+uv run python test_generate_docx_examples.py
+DOCX_RC=$?
+
+if [ $TESTS_RC -eq 0 ]; then
     echo ""
     echo "All tests passed!"
 else
     echo ""
     echo "Some tests failed. Check output above."
-    exit 1
+    exit $TESTS_RC
+fi
+
+if [ $WORD_RC -ne 0 ]; then
+    exit $WORD_RC
+fi
+
+if [ $DOCX_RC -ne 0 ]; then
+    exit $DOCX_RC
 fi

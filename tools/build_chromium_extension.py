@@ -4,7 +4,8 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-MANIFEST_SOURCE = PROJECT_ROOT / "manifest.chromium.json"
+EXTENSION_ROOT = PROJECT_ROOT / "extension"
+MANIFEST_SOURCE = EXTENSION_ROOT / "manifest.chromium.json"
 
 DEFAULT_OUT_DIR = PROJECT_ROOT / "dist" / "chromium"
 
@@ -16,6 +17,7 @@ COPY_ITEMS = [
     "assets",
     "icons",
     "mathjax",
+    "wasm",
 ]
 
 
@@ -43,7 +45,7 @@ def build(out_dir: Path = DEFAULT_OUT_DIR) -> Path:
     )
 
     for item in COPY_ITEMS:
-        src = PROJECT_ROOT / item
+        src = EXTENSION_ROOT / item
         if not src.exists():
             raise FileNotFoundError(f"Missing {src}")
         _copy_item(src, out_dir / item)

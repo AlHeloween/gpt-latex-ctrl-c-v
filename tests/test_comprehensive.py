@@ -45,8 +45,9 @@ from typing import Dict, List, Optional
 
 
 PROJECT_ROOT = Path(__file__).parent.parent
-EXTENSION_PATH = PROJECT_ROOT
+EXTENSION_PATH = PROJECT_ROOT / "extension"
 CHROMIUM_EXTENSION_PATH = PROJECT_ROOT / "dist" / "chromium"
+EXAMPLES_DIR = PROJECT_ROOT / "examples"
 
 
 class ComprehensiveExtensionTester:
@@ -87,11 +88,7 @@ class ComprehensiveExtensionTester:
         print(f"{prefix} {message}")
 
     def _ensure_chromium_extension(self) -> Path:
-        """Build the Chromium MV3 extension dir if missing."""
-        manifest = CHROMIUM_EXTENSION_PATH / "manifest.json"
-        if manifest.exists():
-            return CHROMIUM_EXTENSION_PATH
-
+        """Build the Chromium MV3 extension dir (deterministic; ensures latest sources are copied)."""
         from tools.build_chromium_extension import build  # type: ignore
         return build(CHROMIUM_EXTENSION_PATH)
     
@@ -547,7 +544,7 @@ class ComprehensiveExtensionTester:
         import threading
         
         self.http_server_port = 8000
-        tests_dir = PROJECT_ROOT / "tests"
+        tests_dir = EXAMPLES_DIR
         
         # Custom handler that serves from tests directory
         class TestPageHandler(http.server.SimpleHTTPRequestHandler):
@@ -611,7 +608,7 @@ class ComprehensiveExtensionTester:
             self.log(f"Loading test page via HTTP: {url}", "info")
         else:
             # Use file:// URL
-            test_path = PROJECT_ROOT / "tests" / html_file
+            test_path = EXAMPLES_DIR / html_file
             url = f"file://{test_path.absolute()}"
             self.log(f"Loading test page: {html_file}", "info")
         
@@ -1001,8 +998,8 @@ class ComprehensiveExtensionTester:
                 self.log(f"XSS payload detected in clipboard: {pattern}", "error")
                 return False
         
-        # Verify formulas still work (should contain OMML/MathML)
-        if 'xmlns:m=' not in html_content and 'MathML' not in html_content:
+        # Verify formulas still work (MathML is the portable on-clipboard format; Word converts it to OMML on paste).
+        if 'MathML' not in html_content and 'http://www.w3.org/1998/Math/MathML' not in html_content:
             self.log("Formulas may not be converted (but no XSS found)", "warning")
         
         self.log("XSS prevention: malicious HTML sanitized", "success")
@@ -1092,8 +1089,8 @@ class ComprehensiveExtensionTester:
         if not html_content:
             return False
         
-        # Verify formulas are converted (should have OMML/MathML)
-        has_formulas = 'xmlns:m=' in html_content or 'MathML' in html_content
+        # Verify formulas are converted (should have MathML)
+        has_formulas = ('MathML' in html_content) or ('http://www.w3.org/1998/Math/MathML' in html_content)
         
         if has_formulas:
             self.log("LaTeX edge cases handled correctly", "success")

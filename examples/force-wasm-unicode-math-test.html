@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en" data-copy-office-format-force-wasm="true">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>force-wasm-unicode-math-test</title>
+  </head>
+  <body>
+    <div id="content">
+      <p>These use Unicode math symbols inside LaTeX delimiters (Rust WASM can parse Unicode, but not LaTeX macros):</p>
+      <div>
+        $$
+        ϕ(h,r,t)=Sim(Tr(h),t)
+
+        A⊗B=(a_r b_r)+ϵ(a_r b_d+a_d b_r)
+
+        ‖Q‖=‖q_r‖+ϵ‖q_r‖⟨q_r,q_d⟩
+        $$
+      </div>
+    </div>
+  </body>
+</html>

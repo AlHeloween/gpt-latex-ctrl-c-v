@@ -21,7 +21,8 @@ from playwright.async_api import async_playwright, BrowserContext, Page
 
 
 PROJECT_ROOT = Path(__file__).parent.parent
-EXTENSION_PATH = PROJECT_ROOT
+EXTENSION_PATH = PROJECT_ROOT / "extension"
+EXAMPLES_DIR = PROJECT_ROOT / "examples"
 
 
 class SimpleAutoTester:
@@ -61,7 +62,7 @@ class SimpleAutoTester:
         import socketserver
         import threading
         
-        test_dir = PROJECT_ROOT / "tests"
+        test_dir = EXAMPLES_DIR
         os.chdir(str(test_dir))  # Change to test directory
         
         handler = http.server.SimpleHTTPRequestHandler
@@ -321,7 +322,7 @@ class SimpleAutoTester:
         await self.setup()
         
         # Find test files
-        test_dir = PROJECT_ROOT / "tests"
+        test_dir = EXAMPLES_DIR
         test_files = sorted(list(test_dir.glob("*test*.html")))[:5]  # Test first 5
         
         if not test_files:

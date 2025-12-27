@@ -17,8 +17,8 @@ from playwright.async_api import async_playwright, Browser, BrowserContext, Page
 
 # Get the project root directory
 PROJECT_ROOT = Path(__file__).parent.parent
-EXTENSION_PATH = PROJECT_ROOT
-TEST_HTML = PROJECT_ROOT / "tests" / "gemini-conversation-test.html"
+EXTENSION_PATH = PROJECT_ROOT / "extension"
+TEST_HTML = PROJECT_ROOT / "examples" / "gemini-conversation-test.html"
 
 
 class ExtensionTester:

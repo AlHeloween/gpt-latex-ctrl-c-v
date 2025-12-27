@@ -1,0 +1,20 @@
+2.2 Semantic Interpretation in Aurora-Genesis
+
+While traditionally used for robotic kinematics, in Aurora-Genesis, Q serves as a Time-Evolving Latent Semantic embedding.  
+
+    Rotation (qr​): Encodes the "meaning" of a token relative to a semantic basis.
+
+    Translation (qd​): Encodes the "context" or "time" in which that meaning exists.
+
+    Screw Motion: The combined operation represents how a concept evolves (twists) through the narrative space of the model.
+
+2.3 Operational Constraints
+
+Implementing neural layers in this space requires strict adherence to non-commutative multiplication and the preservation of the dual relationship.
+
+    Multiplication: A⊗B=(ar​br​)+ϵ(ar​bd​+ad​br​). Note that bd​ar​=ar​bd​ in general quaternion algebra. The ordering of operations in the attention mechanism is therefore critical.   
+
+Conjugation: There are three forms of conjugation, but for attention mechanisms, the Total Conjugate is typically used to invert the transformation: Q∗=qr∗​+ϵqd∗​.
+
+Norm: The magnitude is a dual number: ∥Q∥=∥qr​∥+ϵ∥qr​∥⟨qr​,qd​⟩​. Neural networks require real-valued loss functions, necessitating a projection mapping ϕ:Hd​→R.  
+

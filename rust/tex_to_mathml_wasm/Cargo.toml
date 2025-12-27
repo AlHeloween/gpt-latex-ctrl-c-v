@@ -1,0 +1,11 @@
+[package]
+name = "tex_to_mathml_wasm"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+latex2mathml = "=0.2.3"
+

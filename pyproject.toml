@@ -20,11 +20,12 @@ dependencies = [
 include = [
   "tests/**",
   "tools/**",
-  "assets/**",
-  "icons/**",
-  "mathjax/**",
-  "*.js",
-  "*.json",
-  "*.md",
-  "manifest.chromium.json"
+  "extension/**",
+  "examples/**",
+  "docs/**",
+  "plans/**",
+  "plans_completed/**",
+  "AGENTS.md",
+  "pyproject.toml",
+  "uv.lock"
 ]

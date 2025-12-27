@@ -22,7 +22,8 @@ from typing import Dict, Optional, Tuple
 
 
 PROJECT_ROOT = Path(__file__).parent.parent
-EXTENSION_PATH = PROJECT_ROOT
+EXTENSION_PATH = PROJECT_ROOT / "extension"
+EXAMPLES_DIR = PROJECT_ROOT / "examples"
 MANIFEST_PATH = EXTENSION_PATH / "manifest.json"
 
 
@@ -348,7 +349,7 @@ class AutoReloadTester:
             return
         
         # Find test HTML files
-        test_dir = PROJECT_ROOT / "tests"
+        test_dir = EXAMPLES_DIR
         test_files = list(test_dir.glob("*-test.html")) + list(test_dir.glob("test_*.html"))
         
         if not test_files:

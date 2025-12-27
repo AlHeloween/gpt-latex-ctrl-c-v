@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent
-TESTS_DIR = PROJECT_ROOT / "tests"
+TESTS_DIR = PROJECT_ROOT / "examples"
 
 TEST_PAGES = [
     "gemini-conversation-test.html",
