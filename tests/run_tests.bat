@@ -38,6 +38,11 @@ echo Generating docx outputs from examples to test_results\docx...
 uv run python test_generate_docx_examples.py
 set DOCX_ERRORLEVEL=%ERRORLEVEL%
 
+echo.
+echo Running real clipboard -^> docx verification (Windows-only; writes test_results\real_clipboard)...
+uv run python test_real_clipboard_docx.py
+set REAL_CLIP_ERRORLEVEL=%ERRORLEVEL%
+
 if %TESTS_ERRORLEVEL% EQU 0 (
     echo.
     echo All tests passed!
@@ -52,3 +57,4 @@ pause
 if %TESTS_ERRORLEVEL% NEQ 0 exit /b %TESTS_ERRORLEVEL%
 if %WORD_ERRORLEVEL% NEQ 0 exit /b %WORD_ERRORLEVEL%
 if %DOCX_ERRORLEVEL% NEQ 0 exit /b %DOCX_ERRORLEVEL%
+if %REAL_CLIP_ERRORLEVEL% NEQ 0 exit /b %REAL_CLIP_ERRORLEVEL%

@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
+import time
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -64,7 +65,20 @@ def set_clipboard_cfhtml(*, cfhtml: str, plain_text: str, normalize: bool) -> di
     html_bytes = to_write.encode("utf-8") + b"\x00"
     text_bytes = plain_text.encode("utf-16le") + b"\x00\x00"
 
-    _check_win(bool(user32.OpenClipboard(None)), "OpenClipboard failed")
+    # Clipboard can be transiently locked by other processes; retry deterministically.
+    open_attempts = 0
+    last_err = 0
+    deadline_s = 2.0
+    poll_s = 0.05
+    t0 = time.monotonic()
+    while True:
+        open_attempts += 1
+        if bool(user32.OpenClipboard(None)):
+            break
+        last_err = ctypes.get_last_error()
+        if time.monotonic() - t0 >= deadline_s:
+            raise RuntimeError(f"OpenClipboard failed (winerr={last_err}, attempts={open_attempts})")
+        time.sleep(poll_s)
     try:
         _check_win(bool(user32.EmptyClipboard()), "EmptyClipboard failed")
         _set_clipboard_bytes(fmt_html, html_bytes)
@@ -77,6 +91,8 @@ def set_clipboard_cfhtml(*, cfhtml: str, plain_text: str, normalize: bool) -> di
         "html_bytes": len(html_bytes),
         "text_bytes": len(text_bytes),
         "normalized": bool(normalize),
+        "open_clipboard_attempts": open_attempts,
+        "open_clipboard_last_winerr": int(last_err),
     }
 
 
@@ -149,18 +165,35 @@ def word_paste_to_docx(*, out_docx: Path, visible: bool, timeout_s: float = 60.0
     ps = f"""
 $ErrorActionPreference = 'Stop'
 $out = '{out_ps}'
+$doc = $null
 $word = New-Object -ComObject Word.Application
 try {{
   $word.Visible = {'$true' if visible else '$false'}
+  $word.DisplayAlerts = 0
   $doc = $word.Documents.Add()
   try {{
-    $word.Selection.Paste()
+    # Prefer explicit HTML paste. Word's default Paste() can degrade to plain-text depending on user settings.
+    # WdPasteDataType.wdPasteHTML = 10
+    try {{
+      $word.Selection.PasteSpecial([ref]10)
+    }} catch {{
+      $word.Selection.Paste()
+    }}
     $doc.SaveAs([ref]$out, [ref]16)
   }} finally {{
-    $doc.Close($false) | Out-Null
+    if ($doc) {{
+      try {{ $doc.Close($false) | Out-Null }} catch {{}}
+      try {{ [System.Runtime.InteropServices.Marshal]::ReleaseComObject($doc) | Out-Null }} catch {{}}
+      $doc = $null
+    }}
   }}
 }} finally {{
-  $word.Quit() | Out-Null
+  try {{ $word.Quit() | Out-Null }} catch {{}}
+  try {{ [System.Runtime.InteropServices.Marshal]::ReleaseComObject($word) | Out-Null }} catch {{}}
+  $word = $null
+  [GC]::Collect()
+  [GC]::WaitForPendingFinalizers()
+  [GC]::Collect()
 }}
 """
     try:

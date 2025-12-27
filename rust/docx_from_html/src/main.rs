@@ -23,10 +23,33 @@ struct Args {
     title: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct RunStyle {
+    bold: bool,
+    italic: bool,
+    code: bool,
+}
+
 #[derive(Debug, Clone)]
 enum Segment {
-    Text(String),
+    Text { text: String, style: RunStyle },
+    Break,
     Omml(String),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ParagraphStyle {
+    Normal,
+    Heading1,
+    Heading2,
+    CodeBlock,
+    Bullet,
+}
+
+#[derive(Debug, Clone)]
+struct Paragraph {
+    style: ParagraphStyle,
+    segments: Vec<Segment>,
 }
 
 fn normalize_omml_case(xml: &str) -> String {
@@ -145,125 +168,401 @@ fn extract_body(html: &str) -> &str {
     html
 }
 
-fn strip_tags_preserve_newlines(html: &str) -> String {
-    // Deterministic, non-HTML5 parse:
-    // - convert some tags to newlines
-    // - then strip everything else as tags
-    let mut s = html.to_string();
-    for pat in ["<br", "<BR"] {
-        // Normalize <br> variants to newline
-        while let Some(idx) = s.find(pat) {
-            // Find end of tag
-            if let Some(gt) = s[idx..].find('>') {
-                s.replace_range(idx..idx + gt + 1, "\n");
-            } else {
-                break;
-            }
-        }
-    }
-
-    // Paragraph-ish boundaries
-    for close in ["</p>", "</div>", "</li>", "</h1>", "</h2>", "</h3>", "</h4>", "</h5>", "</h6>"] {
-        s = s.replace(close, "\n\n");
-        s = s.replace(&close.to_uppercase(), "\n\n");
-    }
-
-    // Now strip remaining tags.
-    let mut out = String::with_capacity(s.len());
-    let mut in_tag = false;
-    for ch in s.chars() {
-        match ch {
-            '<' => in_tag = true,
-            '>' => in_tag = false,
-            _ if !in_tag => out.push(ch),
-            _ => {}
-        }
-    }
-
-    decode_entities_basic(&out)
-}
-
-fn build_segments_from_html(body_html: &str) -> Result<Vec<Vec<Segment>>> {
-    // Extract OMML blocks and replace with tokens, then strip remaining HTML to text
-    // while preserving blank-line paragraph splits.
+fn preprocess_html(body_html: &str) -> Result<(String, Vec<String>)> {
+    // Extract OMML blocks and replace with tokens so we can parse the remaining HTML
+    // without losing case-sensitive Word math tags in DOCX output.
+    //
+    // NOTE: When HTML is written to the real clipboard by browsers, namespaced tags like <m:oMath>
+    // can be lowercased (<m:omath>) during HTML parsing/serialization. The extension embeds OMML
+    // in msEquation conditional comments to preserve exact casing for Word paste:
+    //   <!--[if gte msEquation 12]><m:oMath>...</m:oMath><![endif]-->
+    // We must extract those blocks and strip the conditional wrappers deterministically.
     let re_omml = Regex::new(r"(?is)<m:omathpara\b[^>]*>.*?</m:omathpara>|<m:omath\b[^>]*>.*?</m:omath>")?;
+    let re_ms_equation = Regex::new(
+        r"(?is)<!--\s*\[if\s+gte\s+msEquation\s+12\]\s*>(.*?)<!\s*\[endif\]\s*-->",
+    )?;
+    let re_ms_equation_fallback =
+        Regex::new(r"(?is)<!\s*\[if\s+!msEquation\]\s*>(.*?)<!\s*\[endif\]\s*>")?;
     let re_annotation = Regex::new(r"(?is)<annotation\b[^>]*>.*?</annotation>")?;
     let re_math = Regex::new(r"(?is)<math\b[^>]*>.*?</math>")?;
 
     let mut omml_blocks: Vec<String> = Vec::new();
     let mut replaced = String::with_capacity(body_html.len());
+
+    fn normalize_omml_namespace(xml: &str) -> String {
+        // DOCX expects the OpenXML OMML namespace. Word clipboard HTML often uses the older MS namespace.
+        String::from(xml).replace(
+            "http://schemas.microsoft.com/office/2004/12/omml",
+            "http://schemas.openxmlformats.org/officeDocument/2006/math",
+        )
+    }
+
+    // 1) Extract msEquation conditional comment OMML blocks as a whole (to remove wrappers).
     let mut last = 0usize;
-    for m in re_omml.find_iter(body_html) {
-        replaced.push_str(&body_html[last..m.start()]);
-        let idx = omml_blocks.len();
-        omml_blocks.push(normalize_omml_case(&body_html[m.start()..m.end()]));
-        replaced.push_str(&format!("__OMML_{idx}__"));
-        last = m.end();
+    for cap in re_ms_equation.captures_iter(body_html) {
+        let m0 = cap
+            .get(0)
+            .ok_or_else(|| anyhow!("msEquation regex capture missing group 0"))?;
+        let inner = cap
+            .get(1)
+            .ok_or_else(|| anyhow!("msEquation regex capture missing group 1"))?
+            .as_str();
+
+        replaced.push_str(&body_html[last..m0.start()]);
+
+        if let Some(omml_match) = re_omml.find(inner) {
+            let idx = omml_blocks.len();
+            let omml = normalize_omml_namespace(&normalize_omml_case(omml_match.as_str()));
+            omml_blocks.push(omml);
+            replaced.push_str(&format!("__OMML_{idx}__"));
+        } else {
+            // If we can't find OMML inside the conditional comment, keep the inner HTML as a fallback.
+            replaced.push_str(inner);
+        }
+
+        last = m0.end();
     }
     replaced.push_str(&body_html[last..]);
 
-    // Prevent raw TeX (KaTeX annotation encoding="application/x-tex") from leaking into plain text.
+    // Strip downlevel-revealed fallback wrappers (keep their inner HTML).
+    replaced = re_ms_equation_fallback.replace_all(&replaced, "$1").to_string();
+
+    // 2) Extract any remaining OMML tags (e.g., from test-bridge payloads).
+    let mut final_replaced = String::with_capacity(replaced.len());
+    let mut last2 = 0usize;
+    for m in re_omml.find_iter(&replaced) {
+        final_replaced.push_str(&replaced[last2..m.start()]);
+        let idx = omml_blocks.len();
+        let omml = normalize_omml_namespace(&normalize_omml_case(&replaced[m.start()..m.end()]));
+        omml_blocks.push(omml);
+        final_replaced.push_str(&format!("__OMML_{idx}__"));
+        last2 = m.end();
+    }
+    final_replaced.push_str(&replaced[last2..]);
+    replaced = final_replaced;
+
+    // Prevent raw TeX (KaTeX annotation encoding="application/x-tex") from leaking into output.
     replaced = re_annotation.replace_all(&replaced, "").to_string();
 
-    // If OMML exists, drop MathML from the remaining HTML to avoid duplicating equations in the output
-    // (OMML is kept as the canonical math representation in the DOCX).
+    // If OMML exists, drop MathML from the remaining HTML to avoid duplicating equations in the output.
     if !omml_blocks.is_empty() {
         replaced = re_math.replace_all(&replaced, "").to_string();
     }
 
-    let text = strip_tags_preserve_newlines(&replaced);
-    let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
-    let paragraphs: Vec<&str> = normalized
-        .split("\n\n")
-        .map(|p| p.trim_matches('\n'))
-        .filter(|p| !p.trim().is_empty())
-        .collect();
+    Ok((replaced, omml_blocks))
+}
 
+fn collapse_whitespace(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut in_ws = false;
+    for ch in s.chars() {
+        if ch.is_whitespace() {
+            if !in_ws {
+                out.push(' ');
+                in_ws = true;
+            }
+        } else {
+            out.push(ch);
+            in_ws = false;
+        }
+    }
+    out
+}
+
+fn build_paragraphs_from_html(body_html: &str) -> Result<Vec<Paragraph>> {
+    let (html, omml_blocks) = preprocess_html(body_html)?;
     let token_re = Regex::new(r"__OMML_(\d+)__")?;
-    let mut out: Vec<Vec<Segment>> = Vec::new();
-    for p in paragraphs {
-        let mut segs: Vec<Segment> = Vec::new();
+
+    let mut paragraphs: Vec<Paragraph> = Vec::new();
+    let mut current = Paragraph {
+        style: ParagraphStyle::Normal,
+        segments: Vec::new(),
+    };
+
+    let mut bold_depth: u32 = 0;
+    let mut italic_depth: u32 = 0;
+    let mut code_depth: u32 = 0;
+    let mut pre_depth: u32 = 0;
+
+    let mut i: usize = 0;
+    let bytes = html.as_bytes();
+
+    let flush = |paragraphs: &mut Vec<Paragraph>, current: &mut Paragraph| {
+        // Trim whitespace-only text at edges (but keep for code blocks).
+        if current.style != ParagraphStyle::CodeBlock {
+            while let Some(Segment::Text { text, .. }) = current.segments.first() {
+                if text.trim().is_empty() {
+                    current.segments.remove(0);
+                } else {
+                    break;
+                }
+            }
+            while let Some(Segment::Text { text, .. }) = current.segments.last() {
+                if text.trim().is_empty() {
+                    current.segments.pop();
+                } else {
+                    break;
+                }
+            }
+        }
+
+        let has_content = current.segments.iter().any(|s| match s {
+            Segment::Text { text, .. } => !text.is_empty(),
+            Segment::Break => true,
+            Segment::Omml(_) => true,
+        });
+
+        if has_content {
+            paragraphs.push(current.clone());
+        }
+
+        current.style = ParagraphStyle::Normal;
+        current.segments.clear();
+    };
+
+    let start_new_paragraph =
+        |style: ParagraphStyle, paragraphs: &mut Vec<Paragraph>, current: &mut Paragraph| {
+        flush(paragraphs, current);
+        current.style = style;
+        current.segments.clear();
+        if style == ParagraphStyle::Bullet {
+            let style = RunStyle {
+                bold: false,
+                italic: false,
+                code: false,
+            };
+            current.segments.push(Segment::Text {
+                text: "• ".to_string(),
+                style,
+            });
+        }
+    };
+
+    let emit_text = |raw: &str,
+                         current: &mut Paragraph,
+                         bold_depth: u32,
+                         italic_depth: u32,
+                         code_depth: u32,
+                         pre_depth: u32|
+     -> Result<()> {
+        if raw.is_empty() {
+            return Ok(());
+        }
+
+        let decoded = decode_entities_basic(raw);
+        let preserve_space = pre_depth > 0;
+        let mut text = if preserve_space {
+            decoded.replace("\r\n", "\n").replace('\r', "\n")
+        } else {
+            collapse_whitespace(&decoded.replace("\r\n", "\n").replace('\r', "\n").replace('\n', " "))
+        };
+
+        if !preserve_space && current.segments.is_empty() {
+            text = text.trim_start().to_string();
+        }
+
+        let run_style = RunStyle {
+            bold: bold_depth > 0,
+            italic: italic_depth > 0,
+            code: (code_depth > 0) || (pre_depth > 0),
+        };
+
+        // Convert newlines to explicit breaks inside code blocks.
+        if preserve_space && text.contains('\n') {
+            let mut first = true;
+            for line in text.split('\n') {
+                if !first {
+                    current.segments.push(Segment::Break);
+                }
+                first = false;
+                if !line.is_empty() {
+                    current.segments.push(Segment::Text {
+                        text: line.to_string(),
+                        style: run_style,
+                    });
+                }
+            }
+            return Ok(());
+        }
+
+        // Replace OMML token markers embedded in text with real OMML segments.
         let mut cursor = 0usize;
-        for caps in token_re.captures_iter(p) {
+        for caps in token_re.captures_iter(&text) {
             let m = caps.get(0).unwrap();
-            let before = &p[cursor..m.start()];
+            let before = &text[cursor..m.start()];
             if !before.is_empty() {
-                segs.push(Segment::Text(before.to_string()));
+                current.segments.push(Segment::Text {
+                    text: before.to_string(),
+                    style: run_style,
+                });
             }
             let idx: usize = caps.get(1).unwrap().as_str().parse().unwrap_or(usize::MAX);
             if idx < omml_blocks.len() {
-                segs.push(Segment::Omml(omml_blocks[idx].clone()));
+                current.segments.push(Segment::Omml(omml_blocks[idx].clone()));
             } else {
-                segs.push(Segment::Text(m.as_str().to_string()));
+                current.segments.push(Segment::Text {
+                    text: m.as_str().to_string(),
+                    style: run_style,
+                });
             }
             cursor = m.end();
         }
-        let tail = &p[cursor..];
+        let tail = &text[cursor..];
         if !tail.is_empty() {
-            segs.push(Segment::Text(tail.to_string()));
+            current.segments.push(Segment::Text {
+                text: tail.to_string(),
+                style: run_style,
+            });
         }
-        out.push(segs);
+
+        Ok(())
+    };
+
+    while i < bytes.len() {
+        // Skip HTML comments deterministically.
+        if html[i..].starts_with("<!--") {
+            if let Some(end) = html[i + 4..].find("-->") {
+                i = i + 4 + end + 3;
+                continue;
+            } else {
+                break;
+            }
+        }
+
+        if bytes[i] == b'<' {
+            // Find the end of tag.
+            let Some(gt_rel) = html[i..].find('>') else {
+                break;
+            };
+            let gt = i + gt_rel;
+            let raw = html[i + 1..gt].trim();
+            i = gt + 1;
+
+            if raw.is_empty() {
+                continue;
+            }
+
+            // Skip doctype/processing directives.
+            if raw.starts_with('!') || raw.starts_with('?') {
+                continue;
+            }
+
+            let is_end = raw.starts_with('/');
+            let raw2 = raw.trim_start_matches('/').trim();
+            let raw2 = raw2.trim_end_matches('/');
+            let name = raw2
+                .split_whitespace()
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_ascii_lowercase();
+
+            // Skip script/style blocks entirely (content is not part of rich text).
+            if !is_end && (name == "script" || name == "style") {
+                let close = format!("</{name}>");
+                if let Some(pos) = html[i..].find(&close) {
+                    i += pos + close.len();
+                }
+                continue;
+            }
+
+            match (is_end, name.as_str()) {
+                (false, "br") => current.segments.push(Segment::Break),
+                (false, "hr") => flush(&mut paragraphs, &mut current),
+                (false, "p" | "div" | "user-query-content" | "message-content") => {
+                    start_new_paragraph(ParagraphStyle::Normal, &mut paragraphs, &mut current);
+                }
+                (true, "p" | "div" | "user-query-content" | "message-content") => {
+                    flush(&mut paragraphs, &mut current);
+                }
+                (false, "li") => start_new_paragraph(ParagraphStyle::Bullet, &mut paragraphs, &mut current),
+                (true, "li") => flush(&mut paragraphs, &mut current),
+                (false, "h1") => start_new_paragraph(ParagraphStyle::Heading1, &mut paragraphs, &mut current),
+                (true, "h1") => flush(&mut paragraphs, &mut current),
+                (false, "h2" | "h3") => start_new_paragraph(ParagraphStyle::Heading2, &mut paragraphs, &mut current),
+                (true, "h2" | "h3") => flush(&mut paragraphs, &mut current),
+                (false, "pre") => {
+                    pre_depth += 1;
+                    start_new_paragraph(ParagraphStyle::CodeBlock, &mut paragraphs, &mut current);
+                }
+                (true, "pre") => {
+                    flush(&mut paragraphs, &mut current);
+                    pre_depth = pre_depth.saturating_sub(1);
+                }
+                (false, "code") => code_depth += 1,
+                (true, "code") => code_depth = code_depth.saturating_sub(1),
+                (false, "strong" | "b") => bold_depth += 1,
+                (true, "strong" | "b") => bold_depth = bold_depth.saturating_sub(1),
+                (false, "em" | "i") => italic_depth += 1,
+                (true, "em" | "i") => italic_depth = italic_depth.saturating_sub(1),
+                _ => {}
+            }
+        } else {
+            let mut j = i;
+            while j < bytes.len() && bytes[j] != b'<' {
+                j += 1;
+            }
+            let raw_text = &html[i..j];
+            i = j;
+            emit_text(
+                raw_text,
+                &mut current,
+                bold_depth,
+                italic_depth,
+                code_depth,
+                pre_depth,
+            )?;
+        }
     }
 
-    Ok(out)
+    flush(&mut paragraphs, &mut current);
+    Ok(paragraphs)
 }
 
-fn build_document_xml(paragraphs: &[Vec<Segment>]) -> String {
-    // Minimal WordprocessingML with OMML support.
+fn build_document_xml(paragraphs: &[Paragraph]) -> String {
+    // Minimal WordprocessingML with basic formatting + OMML support.
     let mut body = String::new();
-    for segs in paragraphs {
+    for p in paragraphs {
         body.push_str("<w:p>");
-        for seg in segs {
+
+        match p.style {
+            ParagraphStyle::Normal | ParagraphStyle::Bullet => {}
+            ParagraphStyle::Heading1 => {
+                body.push_str(r#"<w:pPr><w:pStyle w:val="Heading1"/></w:pPr>"#);
+            }
+            ParagraphStyle::Heading2 => {
+                body.push_str(r#"<w:pPr><w:pStyle w:val="Heading2"/></w:pPr>"#);
+            }
+            ParagraphStyle::CodeBlock => {
+                body.push_str(r#"<w:pPr><w:pStyle w:val="CodeBlock"/></w:pPr>"#);
+            }
+        }
+
+        for seg in &p.segments {
             match seg {
-                Segment::Text(t) => {
-                    let t = t.replace('\u{00A0}', " ");
-                    let t = t.replace('\n', " ");
-                    let t = t.trim_end_matches(' ');
-                    if t.is_empty() {
+                Segment::Break => {
+                    body.push_str("<w:r><w:br/></w:r>");
+                }
+                Segment::Text { text, style } => {
+                    if text.is_empty() {
                         continue;
                     }
-                    let escaped = xml_escape_text(t);
-                    body.push_str(r#"<w:r><w:t xml:space="preserve">"#);
+                    let escaped = xml_escape_text(text);
+                    body.push_str("<w:r>");
+                    if style.bold || style.italic || style.code {
+                        body.push_str("<w:rPr>");
+                        if style.bold {
+                            body.push_str("<w:b/>");
+                        }
+                        if style.italic {
+                            body.push_str("<w:i/>");
+                        }
+                        if style.code {
+                            body.push_str(r#"<w:rFonts w:ascii="Consolas" w:hAnsi="Consolas" w:cs="Consolas"/>"#);
+                        }
+                        body.push_str("</w:rPr>");
+                    }
+                    body.push_str(r#"<w:t xml:space="preserve">"#);
                     body.push_str(&escaped);
                     body.push_str("</w:t></w:r>");
                 }
@@ -273,6 +572,7 @@ fn build_document_xml(paragraphs: &[Vec<Segment>]) -> String {
                 }
             }
         }
+
         body.push_str("</w:p>");
     }
 
@@ -333,12 +633,56 @@ fn word_rels_xml() -> &'static str {
 }
 
 fn styles_xml() -> &'static str {
-    // Minimal default style set.
+    // Minimal default style set (Normal + a few basic paragraph styles).
     r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
   <w:style w:type="paragraph" w:default="1" w:styleId="Normal">
     <w:name w:val="Normal"/>
     <w:qFormat/>
+  </w:style>
+  <w:style w:type="paragraph" w:styleId="Heading1">
+    <w:name w:val="heading 1"/>
+    <w:basedOn w:val="Normal"/>
+    <w:next w:val="Normal"/>
+    <w:uiPriority w:val="9"/>
+    <w:qFormat/>
+    <w:pPr>
+      <w:spacing w:before="240" w:after="120"/>
+      <w:keepNext/>
+      <w:keepLines/>
+    </w:pPr>
+    <w:rPr>
+      <w:b/>
+      <w:sz w:val="32"/>
+    </w:rPr>
+  </w:style>
+  <w:style w:type="paragraph" w:styleId="Heading2">
+    <w:name w:val="heading 2"/>
+    <w:basedOn w:val="Normal"/>
+    <w:next w:val="Normal"/>
+    <w:uiPriority w:val="9"/>
+    <w:qFormat/>
+    <w:pPr>
+      <w:spacing w:before="200" w:after="100"/>
+      <w:keepNext/>
+      <w:keepLines/>
+    </w:pPr>
+    <w:rPr>
+      <w:b/>
+      <w:sz w:val="28"/>
+    </w:rPr>
+  </w:style>
+  <w:style w:type="paragraph" w:styleId="CodeBlock">
+    <w:name w:val="Code Block"/>
+    <w:basedOn w:val="Normal"/>
+    <w:qFormat/>
+    <w:pPr>
+      <w:spacing w:before="120" w:after="120"/>
+    </w:pPr>
+    <w:rPr>
+      <w:rFonts w:ascii="Consolas" w:hAnsi="Consolas" w:cs="Consolas"/>
+      <w:sz w:val="20"/>
+    </w:rPr>
   </w:style>
 </w:styles>"#
 }
@@ -384,7 +728,7 @@ fn main() -> Result<()> {
         .context("read html")?;
 
     let body = extract_body(&html);
-    let paragraphs = build_segments_from_html(body).context("parse html into segments")?;
+    let paragraphs = build_paragraphs_from_html(body).context("parse html into paragraphs")?;
     if paragraphs.is_empty() {
         return Err(anyhow!("no paragraphs produced from input"));
     }

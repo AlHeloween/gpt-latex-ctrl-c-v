@@ -16,7 +16,7 @@ const CONFIG = {
   NOTIFICATION_DURATION: 3000, // milliseconds
   
   // Excluded tags for LaTeX processing
-  EXCLUDED_TAGS: ["CODE", "PRE", "KBD", "SAMP", "TEXTAREA"],
+  EXCLUDED_TAGS: ["CODE", "PRE", "KBD", "SAMP", "TEXTAREA", "SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE"],
   
   // LaTeX patterns
   LATEX_PATTERNS: {

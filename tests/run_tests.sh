@@ -33,6 +33,16 @@ echo "Generating docx outputs from examples to test_results/docx..."
 uv run python test_generate_docx_examples.py
 DOCX_RC=$?
 
+echo ""
+REAL_CLIP_RC=0
+if uv run python -c "import os,sys; sys.exit(0 if os.name=='nt' else 1)"; then
+    echo "Running real clipboard -> docx verification (Windows-only; writes test_results/real_clipboard)..."
+    uv run python test_real_clipboard_docx.py
+    REAL_CLIP_RC=$?
+else
+    echo "Skipping real clipboard -> docx verification (non-Windows)."
+fi
+
 if [ $TESTS_RC -eq 0 ]; then
     echo ""
     echo "All tests passed!"
@@ -48,4 +58,8 @@ fi
 
 if [ $DOCX_RC -ne 0 ]; then
     exit $DOCX_RC
+fi
+
+if [ $REAL_CLIP_RC -ne 0 ]; then
+    exit $REAL_CLIP_RC
 fi

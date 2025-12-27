@@ -13,7 +13,7 @@
       LATEX_TO_OMML_TIMEOUT: 8000,
       LARGE_SELECTION_THRESHOLD: 50000,
       NOTIFICATION_DURATION: 3000,
-      EXCLUDED_TAGS: ["CODE", "PRE", "KBD", "SAMP", "TEXTAREA"],
+      EXCLUDED_TAGS: ["CODE", "PRE", "KBD", "SAMP", "TEXTAREA", "SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE"],
       MESSAGES: {
         NO_SELECTION: "No text selected.",
         SELECTION_INVALID: "Selection is invalid. Please select text again.",
@@ -60,6 +60,18 @@
   })();
 
   let lastClipboardPayload = null;
+  
+  function isRealClipboardEnabledForTestPage() {
+    // Deterministic toggle: tests can opt into exercising the *real* clipboard path.
+    // Default stays capture-only to avoid OS prompts/flakiness.
+    try {
+      if (!IS_TEST_PAGE) return false;
+      const v = document?.documentElement?.dataset?.copyOfficeFormatRealClipboard;
+      return String(v || "").toLowerCase() === "true";
+    } catch {
+      return false;
+    }
+  }
 
   function ensureTestBridge() {
     if (!IS_TEST_PAGE || typeof document === "undefined") return null;
@@ -121,7 +133,7 @@
 
   function normalizeLatexForRust(latex) {
     // Rust WASM converter is intentionally simple: keep input inspectable and avoid introducing macros.
-    // NOTE: latex2mathml does not support most control sequences; any backslash should skip Rust.
+    // NOTE: latex2mathml is not a full TeX engine; if it fails, we fall back to other strategies.
     let s = normalizeLatexCommon(latex);
     // Some sites use PUA glyphs for symbols (e.g., ≠). Replace known ones conservatively with Unicode.
     s = s.replace(/\uE020/g, "≠");
@@ -1042,10 +1054,6 @@
       document.documentElement.dataset.copyOfficeFormatForceWasm === "true";
 
     try {
-      if (rustInput.includes("\\")) {
-        if (forceWasm) throw new Error("rust-wasm skipped (contains backslash control sequences)");
-        throw new Error("rust-wasm skipped");
-      }
       const res = await rustLatexToMathml(rustInput, !!display);
       if (res && res.ok && typeof res.mathml === "string") {
         if (IS_TEST_PAGE) {
@@ -1224,6 +1232,19 @@
     // Use safer HTML parsing
     const body = safeParseHtml(html);
     ommlRoot.replaceChildren(...body.childNodes);
+
+    // Deterministic sanitization: scripts/styles/embeds are not part of the clipboard payload we want,
+    // and keeping them can corrupt conversion (e.g. LaTeX patterns inside inline <script> config blocks).
+    try {
+      for (const sel of ["script", "style", "noscript", "template"]) {
+        ommlRoot.querySelectorAll(sel).forEach((n) => n.remove());
+      }
+      for (const sel of ["iframe", "object", "embed"]) {
+        ommlRoot.querySelectorAll(sel).forEach((n) => n.remove());
+      }
+    } catch {
+      // ignore
+    }
     
     // Performance: For very large selections, process in chunks
     // Check if selection is large
@@ -1314,8 +1335,17 @@
       const proc = new XSLTProcessor();
       proc.importStylesheet(xslt);
 
-      const reMath = /<math\b[\s\S]*?<\/math>/gi;
-      let converted = 0;
+	      const reMath = /<math\b[\s\S]*?<\/math>/gi;
+	      let converted = 0;
+	
+	      function wrapMsEquationConditional(ommlXml, fallbackHtml) {
+	        // Word requires OMML to be embedded in an msEquation conditional comment to preserve
+	        // XML tag casing (HTML parsing lowercases unknown namespaced tags, breaking Word paste).
+	        // The OMML itself is XML (case-sensitive); the HTML comment body is preserved verbatim.
+	        const ms = `<!--[if gte msEquation 12]>${ommlXml}<![endif]-->`;
+	        const fb = `<![if !msEquation]>${fallbackHtml}<![endif]>`;
+	        return ms + fb;
+	      }
 
       // Async replace helper.
       const parts = [];
@@ -1340,15 +1370,15 @@
               if (!ommlDoc || !ommlDoc.documentElement) {
                 conv = { wrapped: match };
               } else {
-                const omml = new XMLSerializer().serializeToString(ommlDoc.documentElement);
-                const isBlock = /\bdisplay\s*=\s*"block"/i.test(match);
-                const style = isBlock ? "mso-element:omath; display:block;" : "mso-element:omath; display:inline-block;";
-                conv = { wrapped: `<span style=\"${style}\">${omml}${match}</span>` };
-              }
-            }
-          } catch {
-            conv = { wrapped: match };
-          }
+	                const omml = new XMLSerializer().serializeToString(ommlDoc.documentElement);
+	                const isBlock = /\bdisplay\s*=\s*"block"/i.test(match);
+	                const style = isBlock ? "mso-element:omath; display:block;" : "mso-element:omath; display:inline-block;";
+	                conv = { wrapped: `<span style=\"${style}\">${wrapMsEquationConditional(omml, match)}</span>` };
+	              }
+	            }
+	          } catch {
+	            conv = { wrapped: match };
+	          }
           cache.set(cacheKey, conv);
         }
 
@@ -1374,6 +1404,49 @@
       // This is critical for large SSR selections (Gemini) where the DOM often contains many text node boundaries.
       try {
         root.normalize();
+      } catch {
+        // ignore
+      }
+
+      // MathJax v3 CHTML output (Gemini/static examples): replace the heavy visual wrapper (<mjx-container>)
+      // with the embedded assistive MathML (<mjx-assistive-mml><math>...</math>).
+      // This dramatically reduces output size and prevents Word/LibreOffice from choking on unknown mjx-* tags.
+      try {
+        const mjxContainers = Array.from(root.querySelectorAll("mjx-container"));
+        let mjxFound = 0;
+        let mjxReplaced = 0;
+
+        for (const el of mjxContainers) {
+          try {
+            if (!el || !el.querySelector) continue;
+            if (isExcluded(el, exclude)) continue;
+            mjxFound += 1;
+            const assist = el.querySelector("mjx-assistive-mml");
+            const math = assist ? assist.querySelector("math") : null;
+            if (!math || !math.outerHTML) continue;
+
+            const displayAttr = (assist && assist.getAttribute) ? (assist.getAttribute("display") || "") : "";
+            const isDisplay = String(displayAttr || "").toLowerCase() === "block";
+
+            const span = document.createElement("span");
+            span.className = "math-mathml";
+            span.style.cssText = isDisplay ? "display:block;" : "display:inline-block;";
+            appendStringAsNodes(span, stripMathmlAnnotations(math.outerHTML));
+            el.replaceWith(span);
+            mjxReplaced += 1;
+          } catch {
+            // ignore
+          }
+        }
+
+        if (IS_TEST_PAGE) {
+          try {
+            document.documentElement.dataset.copyOfficeFormatMathJaxFound = String(mjxFound);
+            document.documentElement.dataset.copyOfficeFormatMathJaxReplaced = String(mjxReplaced);
+          } catch {
+            // ignore
+          }
+        }
       } catch {
         // ignore
       }
@@ -1690,7 +1763,8 @@
     log("Plain text length:", plainText ? plainText.length : 0);
 
     // Test pages: capture payload deterministically and avoid real clipboard permission prompts.
-    if (IS_TEST_PAGE) {
+    const realClipboardForTests = isRealClipboardEnabledForTestPage();
+    if (IS_TEST_PAGE && !realClipboardForTests) {
       const wrapped = wrapHtmlDoc(htmlContent);
       const cfhtml = buildCfHtml(wrapped, location.href);
       lastClipboardPayload = {
@@ -1705,37 +1779,7 @@
     }
 
     const wrapped = wrapHtmlDoc(htmlContent);
-    
-    // Feature detection
-    if (!navigator.clipboard || !navigator.clipboard.write) {
-      logError("Clipboard API not available");
-      throw new Error("Clipboard API not available");
-    }
-    
-    if (typeof ClipboardItem === 'undefined') {
-      logWarn("ClipboardItem not available, using fallback");
-      if (IS_TEST_PAGE && typeof window !== 'undefined' && window.__copyOfficeFormatExtension) {
-        window.__copyOfficeFormatExtension.lastClipboard = {
-          cfhtml: buildCfHtml(wrapped, location.href),
-          wrappedHtml: wrapped,
-          plainText,
-          via: "execCommand-fallback",
-          timestamp: Date.now()
-        };
-      }
-      if (IS_TEST_PAGE) {
-        lastClipboardPayload = {
-          cfhtml: buildCfHtml(wrapped, location.href),
-          wrappedHtml: wrapped,
-          plainText,
-          via: "execCommand-fallback",
-          timestamp: Date.now()
-        };
-        updateTestBridge();
-      }
-      fallbackExecCopy(wrapped, plainText);
-      return;
-    }
+    const plain = plainText || stripTags(htmlContent) || "";
     
     const cfhtml = buildCfHtml(wrapped, location.href);
     log("CF_HTML length:", cfhtml.length);
@@ -1744,8 +1788,8 @@
       window.__copyOfficeFormatExtension.lastClipboard = {
         cfhtml,
         wrappedHtml: wrapped,
-        plainText,
-        via: "navigator.clipboard.write",
+        plainText: plain,
+        via: realClipboardForTests ? "real-clipboard" : "navigator.clipboard.write",
         timestamp: Date.now()
       };
     }
@@ -1753,8 +1797,8 @@
       lastClipboardPayload = {
         cfhtml,
         wrappedHtml: wrapped,
-        plainText,
-        via: "navigator.clipboard.write",
+        plainText: plain,
+        via: realClipboardForTests ? "real-clipboard" : "navigator.clipboard.write",
         timestamp: Date.now()
       };
       updateTestBridge();
@@ -1765,34 +1809,67 @@
     // - Browsers on Windows will translate "text/html" to the OS "HTML Format" clipboard entry.
     // If we put CF_HTML (Version:1.0/StartHTML/StartFragment...) into "text/html", apps like Word
     // can end up pasting the header verbatim as plain text.
+    if (navigator.clipboard && navigator.clipboard.write && typeof ClipboardItem !== "undefined") {
     const payload = {
       "text/html": new Blob([wrapped], { type: "text/html" }),
-      "text/plain": new Blob([plainText], { type: "text/plain" }),
+      "text/plain": new Blob([plain], { type: "text/plain" }),
     };
-    
+
     try {
       log("Creating ClipboardItem...");
       const item = new ClipboardItem(payload);
       log("Writing to clipboard...");
       await navigator.clipboard.write([item]);
       log("✅ Clipboard write successful");
+      return;
     } catch (err) {
       logError("Clipboard write error:", err);
-      logError("Error name:", err.name);
-      logError("Error message:", err.message);
-      if (err.name === "NotAllowedError") {
-        logError("Clipboard permission denied - user gesture may be required");
-        throw new Error(CONFIG.MESSAGES.CLIPBOARD_DENIED);
-      }
-      logWarn("Async clipboard failed, falling back to execCommand", err);
-      try {
-        fallbackExecCopy(wrapped, plainText);
-        log("✅ Fallback execCommand copy successful");
-      } catch (fallbackErr) {
-        logError("Fallback copy also failed:", fallbackErr);
-        throw fallbackErr;
-      }
+      logError("Error name:", err && err.name ? err.name : "(unknown)");
+      logError("Error message:", err && err.message ? err.message : String(err));
+      // Fall through to deterministic execCommand fallback below.
     }
+    }
+
+    // Deterministic fallback: use a copy event handler to set clipboardData with raw strings.
+    // This preserves Office HTML (including OMML markup) without DOM round-tripping.
+    try {
+      await execCopyWithClipboardData({ html: wrapped, plain });
+      log("✅ execCommand clipboardData copy successful");
+      return;
+    } catch (err) {
+      logError("execCommand clipboardData copy failed:", err);
+    }
+
+    // Last resort: legacy DOM selection copy (may lose OMML casing/markup).
+    fallbackExecCopy(wrapped, plain);
+    log("✅ Fallback execCommand selection copy successful");
+  }
+
+  function execCopyWithClipboardData({ html, plain }) {
+    return new Promise((resolve, reject) => {
+      try {
+        const onCopy = (e) => {
+          try {
+            const cd = e && e.clipboardData ? e.clipboardData : null;
+            if (!cd) throw new Error("clipboardData unavailable on copy event");
+            cd.setData("text/plain", String(plain || ""));
+            cd.setData("text/html", String(html || ""));
+            e.preventDefault();
+            resolve(true);
+          } catch (err) {
+            reject(err);
+          }
+        };
+
+        document.addEventListener("copy", onCopy, { capture: true, once: true });
+        const ok = document.execCommand("copy");
+        if (!ok) {
+          reject(new Error("execCommand('copy') returned false"));
+        }
+      } catch (err) {
+        reject(err);
+      }
+    });
   }
 
   function buildCfHtml(fullHtml, sourceUrl = "") {

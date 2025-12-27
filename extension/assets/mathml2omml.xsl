@@ -1,17 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <xsl:stylesheet version="1.0"
   xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
-  xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"
-  xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+  xmlns:m="http://schemas.microsoft.com/office/2004/12/omml"
   xmlns:ml="http://www.w3.org/1998/Math/MathML">
   <xsl:output method="xml" indent="no"/>
 
   <xsl:template match="/">
-    <m:oMathPara>
-      <m:oMath>
-        <xsl:apply-templates select="ml:math/*"/>
-      </m:oMath>
-    </m:oMathPara>
+    <m:oMath>
+      <xsl:apply-templates select="ml:math/*"/>
+    </m:oMath>
   </xsl:template>
 
   <xsl:template match="ml:mrow|ml:mstyle|ml:mphantom">
