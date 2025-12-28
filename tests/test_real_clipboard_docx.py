@@ -63,6 +63,16 @@ def _first_match_selector(html_path: Path) -> str:
     except Exception:
         return "body"
 
+    # Firefox "DOM Source of Selection" (view-selection-source) pages: the real content is inside the
+    # rendered source view; selectors like ".markdown" may appear only as *text* and are not valid DOM targets.
+    if (
+        "DOM Source of Selection" in head
+        or 'id="viewsource"' in head
+        or "viewsource.css" in head
+        or "resource://content-accessible/viewsource.css" in head
+    ):
+        return "body"
+
     marker = 'name="copy-office-format-selector"'
     i = head.find(marker)
     if i >= 0:
@@ -84,7 +94,8 @@ def _first_match_selector(html_path: Path) -> str:
             if f'id="{sel[1:]}"' in head:
                 return sel
         elif sel.startswith("."):
-            if f'class="{sel[1:]}' in head or f" {sel[1:]}" in head:
+            cls = sel[1:]
+            if re.search(rf'class="[^"]*\\b{re.escape(cls)}\\b', head):
                 return sel
         else:
             if f"<{sel}" in head:
@@ -318,99 +329,142 @@ async def main() -> int:
                 word_docx_out.parent.mkdir(parents=True, exist_ok=True)
 
                 url = f"http://127.0.0.1:{port}/{case.rel_path}"
-                await page.goto(url, wait_until="domcontentloaded")
-                await _dom_prove_ready(page)
-                await _wait_extension_marker(page)
 
-                # Enable real clipboard path for test pages.
-                await page.evaluate(
-                    "() => { document.documentElement.dataset.copyOfficeFormatRealClipboard = 'true'; }"
-                )
+                try:
+                    await page.goto(url, wait_until="domcontentloaded")
+                    await _dom_prove_ready(page)
+                    await _wait_extension_marker(page)
 
-                # Trigger copy via deterministic test hook.
-                await _trigger_copy(page, case.selector, timeout_ms=int(args.timeout_ms))
+                    # Enable real clipboard path for test pages.
+                    await page.evaluate(
+                        "() => { document.documentElement.dataset.copyOfficeFormatRealClipboard = 'true'; }"
+                    )
 
-                # Pull test-bridge payload for debugging (not used as source of truth).
-                bridge_payload = await page.evaluate(
-                    """
-                    () => {
-                        const el = document.getElementById('__copyOfficeFormatTestBridge');
-                        return el && el.value ? el.value : null;
+                    # Trigger copy via deterministic test hook.
+                    await _trigger_copy(page, case.selector, timeout_ms=int(args.timeout_ms))
+
+                    # Snapshot page-side debug state (precondition/action/postcondition artifacts).
+                    page_debug = await page.evaluate(
+                        """
+                        () => ({
+                          url: location.href,
+                          selector: document.documentElement.dataset.copyOfficeFormatTestSelector || null,
+                          selectorFound: document.documentElement.dataset.copyOfficeFormatTestSelectorFound || null,
+                          selectionLength: document.documentElement.dataset.copyOfficeFormatTestSelectionLength || null,
+                          selectionSourceDocDetected: document.documentElement.dataset.copyOfficeFormatSelectionSourceDocDetected || null,
+                          selectionSourceHtmlDetected: document.documentElement.dataset.copyOfficeFormatSelectionSourceHtmlDetected || null,
+                          selectionSourceExtractedLength: document.documentElement.dataset.copyOfficeFormatSelectionSourceExtractedLength || null,
+                          selectionSourceExtractedVia: document.documentElement.dataset.copyOfficeFormatSelectionSourceExtractedVia || null,
+                          lastCopyError: document.documentElement.dataset.copyOfficeFormatLastCopyError || null,
+                        })
+                        """
+                    )
+                    _write_json(out_dir / "page_debug.json", page_debug)
+
+                    # Pull test-bridge payload for debugging (not used as source of truth).
+                    bridge_payload = await page.evaluate(
+                        """
+                        () => {
+                            const el = document.getElementById('__copyOfficeFormatTestBridge');
+                            return el && el.value ? el.value : null;
+                        }
+                        """
+                    )
+                    if bridge_payload:
+                        (out_dir / "bridge_payload.json").write_text(str(bridge_payload), encoding="utf-8")
+
+                    # Read OS clipboard and persist artifacts.
+                    clip = dump_clipboard()
+                    _write_json(out_dir / "clipboard_dump.json", clip)
+                    (out_dir / "clipboard_cfhtml.txt").write_text(clip.get("cfhtml", ""), encoding="utf-8")
+                    (out_dir / "clipboard_fragment.html").write_text(clip.get("fragment", ""), encoding="utf-8")
+                    (out_dir / "clipboard_plain.txt").write_text(clip.get("plain_text", ""), encoding="utf-8")
+
+                    # Deterministic clipboard postcondition: correct SourceURL and marker must be present.
+                    validation = {
+                        "expected_source_url": url,
+                        "actual_source_url": clip.get("source_url", ""),
+                        "cfhtml_length": clip.get("cfhtml_length", 0),
+                        "fragment_length": len(str(clip.get("fragment", ""))),
                     }
-                    """
-                )
-                if bridge_payload:
-                    (out_dir / "bridge_payload.json").write_text(str(bridge_payload), encoding="utf-8")
+                    _write_json(out_dir / "clipboard_validation.json", validation)
 
-                # Read OS clipboard and persist artifacts.
-                clip = dump_clipboard()
-                _write_json(out_dir / "clipboard_dump.json", clip)
-                (out_dir / "clipboard_cfhtml.txt").write_text(clip.get("cfhtml", ""), encoding="utf-8")
-                (out_dir / "clipboard_fragment.html").write_text(clip.get("fragment", ""), encoding="utf-8")
-                (out_dir / "clipboard_plain.txt").write_text(clip.get("plain_text", ""), encoding="utf-8")
-
-                html_for_docx = _wrap_fragment_for_docx(str(clip.get("fragment", "")))
-                in_html = out_dir / "clipboard_for_docx.html"
-                in_html.write_text(html_for_docx, encoding="utf-8")
-
-                proc = subprocess.run(
-                    [str(exe), "--html-file", str(in_html), "--out", str(docx_out), "--title", case.name],
-                    cwd=str(PROJECT_ROOT),
-                    capture_output=True,
-                    text=True,
-                )
-                if proc.returncode != 0:
-                    summary["ok"] = False
-                    summary["cases"][case.name] = {"ok": False, "error": proc.stdout + "\n" + proc.stderr}
-                    continue
-
-                # Simple validations:
-                # - If clipboard contains OMML markers, docx must contain OMML.
-                frag_low = str(clip.get("fragment", "")).lower()
-                expects_omml = ("mso-element:omath" in frag_low) or ("<m:omath" in frag_low)
-                has_omml = _docx_contains(docx_out, "<m:oMath") or _docx_contains(docx_out, "<m:oMathPara")
-                expects_code = ("<pre" in frag_low) or ("<code" in frag_low)
-                has_code_font = _docx_contains(docx_out, 'w:rFonts w:ascii="Consolas"')
-
-                ok = True
-                if expects_omml and not has_omml:
-                    ok = False
-                if expects_code and not has_code_font:
-                    ok = False
-
-                word_ok = None
-                if word_available:
-                    try:
-                        set_clipboard_cfhtml(
-                            cfhtml=str(clip.get("cfhtml", "")),
-                            plain_text=str(clip.get("plain_text", "")) or " ",
-                            normalize=False,
+                    if validation["actual_source_url"] != url:
+                        raise RuntimeError(
+                            "Clipboard did not update for this case "
+                            f"(expected SourceURL={url}, got {validation['actual_source_url']})"
                         )
-                        word_paste_to_docx(out_docx=word_docx_out, visible=False, timeout_s=60.0)
-                        xml_path = out_root / "word_docx" / f"{case.name}.document.xml"
-                        xml = extract_document_xml(word_docx_out, xml_path)
-                        word_ok = ("<m:oMath" in xml) or ("<m:oMathPara" in xml)
-                        if expects_omml and not word_ok:
-                            ok = False
-                    except Exception as e:
-                        # If Word automation isn't available, skip Word validation for the rest of the run
-                        # (do not fail the suite).
-                        word_available = False
-                        summary["word_available"] = False
-                        summary["word_error"] = str(e)
-                        word_ok = None
 
-                if not ok:
+                    html_for_docx = _wrap_fragment_for_docx(str(clip.get("fragment", "")))
+                    in_html = out_dir / "clipboard_for_docx.html"
+                    in_html.write_text(html_for_docx, encoding="utf-8")
+
+                    proc = subprocess.run(
+                        [str(exe), "--html-file", str(in_html), "--out", str(docx_out), "--title", case.name],
+                        cwd=str(PROJECT_ROOT),
+                        capture_output=True,
+                        text=True,
+                    )
+                    if proc.returncode != 0:
+                        raise RuntimeError(proc.stdout + "\n" + proc.stderr)
+
+                    # Simple validations:
+                    # - If clipboard contains OMML markers, docx must contain OMML.
+                    frag_low = str(clip.get("fragment", "")).lower()
+                    expects_omml = ("mso-element:omath" in frag_low) or ("<m:omath" in frag_low)
+                    has_omml = _docx_contains(docx_out, "<m:oMath") or _docx_contains(docx_out, "<m:oMathPara")
+                    expects_code = ("<pre" in frag_low) or ("<code" in frag_low)
+                    has_code_font = _docx_contains(docx_out, 'w:rFonts w:ascii="Consolas"')
+
+                    ok = True
+                    if expects_omml and not has_omml:
+                        ok = False
+                    if expects_code and not has_code_font:
+                        ok = False
+
+                    word_ok = None
+                    if word_available:
+                        try:
+                            set_clipboard_cfhtml(
+                                cfhtml=str(clip.get("cfhtml", "")),
+                                plain_text=str(clip.get("plain_text", "")) or " ",
+                                normalize=False,
+                            )
+                            word_paste_to_docx(out_docx=word_docx_out, visible=False, timeout_s=60.0)
+                            xml_path = out_root / "word_docx" / f"{case.name}.document.xml"
+                            xml = extract_document_xml(word_docx_out, xml_path)
+                            word_ok = ("<m:oMath" in xml) or ("<m:oMathPara" in xml)
+                            if expects_omml and not word_ok:
+                                ok = False
+                        except Exception as e:
+                            # If Word automation isn't available, skip Word validation for the rest of the run
+                            # (do not fail the suite).
+                            word_available = False
+                            summary["word_available"] = False
+                            summary["word_error"] = str(e)
+                            word_ok = None
+
+                    if not ok:
+                        summary["ok"] = False
+
+                    summary["cases"][case.name] = {
+                        "ok": ok,
+                        "expected_source_url": url,
+                        "actual_source_url": clip.get("source_url", ""),
+                        "expects_omml": expects_omml,
+                        "docx_has_omml": has_omml,
+                        "word_paste_has_omml": word_ok,
+                        "expects_code": expects_code,
+                        "docx_has_code_font": has_code_font,
+                    }
+                except Exception as e:
                     summary["ok"] = False
-
-                summary["cases"][case.name] = {
-                    "ok": ok,
-                    "expects_omml": expects_omml,
-                    "docx_has_omml": has_omml,
-                    "word_paste_has_omml": word_ok,
-                    "expects_code": expects_code,
-                    "docx_has_code_font": has_code_font,
-                }
+                    summary["cases"][case.name] = {
+                        "ok": False,
+                        "expected_source_url": url,
+                        "error": str(e),
+                    }
+                    continue
         finally:
             try:
                 await context.close()

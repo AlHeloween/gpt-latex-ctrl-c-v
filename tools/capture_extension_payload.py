@@ -126,13 +126,11 @@ async def run(
     timeout_ms: int,
     show_ui: bool = False,
 ) -> None:
-    # Build/ensure Chromium extension output exists.
+    # Always rebuild the Chromium extension bundle so we never test a stale dist/.
     chromium_dir = PROJECT_ROOT / "dist" / "chromium"
-    if not chromium_dir.exists():
-        # Deterministic fallback: build it from current sources.
-        from tools.build_chromium_extension import build  # type: ignore
+    from tools.build_chromium_extension import build  # type: ignore
 
-        build(chromium_dir)
+    build(chromium_dir)
 
     handler = lambda *a, **kw: _QuietHandler(*a, directory=str(PROJECT_ROOT), **kw)  # noqa: E731
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)

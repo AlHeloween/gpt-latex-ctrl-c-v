@@ -48,7 +48,7 @@
 **If you see errors:**
 - "Cannot send message" → Content script not loaded on this page
 - "No text selected" → Selection was lost
-- MathJax errors → MathJax library failed to load
+- TeX conversion errors → WASM conversion failed (see console for details)
 
 ### Issue: Clipboard Operation Fails
 
@@ -72,9 +72,8 @@
 - Text copies but LaTeX formulas remain as raw text (e.g., `$x^2$`)
 
 **Solutions:**
-1. Check MathJax loading:
-   - Console should show MathJax startup messages
-   - If not, check `extension/mathjax/tex-mml-chtml.js` exists
+1. Check WASM bundle:
+   - Ensure `extension/wasm/tex_to_mathml.wasm` exists and is up to date
 
 2. Check XSLT loading:
    - Console should not show XSLT errors

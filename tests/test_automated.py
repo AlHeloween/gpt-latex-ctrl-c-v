@@ -317,8 +317,6 @@ class AutomatedExtensionTester:
             "has_plain_text": False,
             "contains_omml": False,
             "contains_mathml": False,
-            "has_cf_html_format": False,
-            "cf_html_utf8_compliant": False,
             "no_raw_latex": True,
             "no_parse_error_markers": True,
             "error": None,
@@ -353,25 +351,12 @@ class AutomatedExtensionTester:
                 verification["contains_mathml"] = True
                 self.log("Clipboard HTML contains MathML namespace", "success")
             
-            # Check for CF_HTML format
-            if "Version:1.0" in html_content and "StartHTML:" in html_content:
-                verification["has_cf_html_format"] = True
-                self.log("Clipboard has CF_HTML format", "success")
-
-                # Verify CF_HTML offsets match UTF-8 byte lengths.
-                import re
-
-                start_html_match = re.search(r"StartHTML:(\d+)", html_content)
-                if start_html_match:
-                    header_end = html_content.find("<!--StartFragment-->")
-                    if header_end > 0:
-                        header_text = html_content[:header_end]
-                        utf8_len = len(header_text.encode("utf-8"))
-                        actual_offset = int(start_html_match.group(1))
-                        # Allow small tolerance
-                        if abs(actual_offset - utf8_len) <= 2:
-                            verification["cf_html_utf8_compliant"] = True
-                            self.log("CF_HTML offsets match UTF-8 bytes (verified)", "success")
+            # We provide raw HTML (no Windows CF_HTML header). The browser/OS clipboard layer can
+            # translate this into platform clipboard formats (e.g., Windows "HTML Format").
+            if ("starthtml:" in low) or ("endhtml:" in low) or ("startfragment:" in low):
+                verification["error"] = "Clipboard HTML unexpectedly contains CF_HTML header fields"
+                self.log(verification["error"], "error")
+                return verification
             
             # Check for raw LaTeX (should not be present if converted)
             import re
@@ -499,7 +484,7 @@ class AutomatedExtensionTester:
                 expect_formulas=True
             )
 
-            # Test 4: Forced Rust WASM conversion (no MathJax/page bridge allowed)
+            # Test 4: Forced Rust WASM conversion (no external renderer fallback)
             original_test_html = self.test_html
             try:
                 self.test_html = PROJECT_ROOT / "examples" / "force-wasm-latex-test.html"

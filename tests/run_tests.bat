@@ -13,7 +13,16 @@ echo.
 echo Building Rust WASM (tex_to_mathml.wasm)...
 uv run python ..\tools\build_rust_wasm.py
 if %ERRORLEVEL% NEQ 0 (
-    echo ❌ Rust WASM build failed.
+    echo ? Rust WASM build failed.
+    popd
+    exit /b 1
+)
+
+echo.
+echo Checking JS size budgets...
+uv run python ..\tools\check_js_size.py
+if %ERRORLEVEL% NEQ 0 (
+    echo ? JS size budget failed.
     popd
     exit /b 1
 )

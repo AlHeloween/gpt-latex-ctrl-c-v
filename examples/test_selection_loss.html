@@ -26,8 +26,8 @@
 </head>
 <body>
     <h1>Selection Loss Prevention Test</h1>
-    <p><strong>Purpose:</strong> Test that selection is preserved during async MathJax loading operations.</p>
-    <p><strong>Test:</strong> Select the content below and copy. The selection should remain valid even during MathJax loading delays.</p>
+    <p><strong>Purpose:</strong> Test that selection is preserved during async DOM mutations.</p>
+    <p><strong>Test:</strong> Select the content below and copy. The selection should remain valid even while the page changes.</p>
     
     <hr style="margin: 30px 0;">
     
@@ -41,22 +41,16 @@
     </div>
     
     <hr style="margin: 30px 0;">
-    <p style="color: #666; font-size: 0.9em;"><strong>Note:</strong> This page contains formulas that require MathJax loading, which simulates the async delay scenario.</p>
-    
-    <!-- MathJax for rendering LaTeX formulas -->
+    <p style="color: #666; font-size: 0.9em;"><strong>Note:</strong> This page intentionally mutates the DOM after a delay to simulate real-world chat UIs.</p>
+
     <script>
-        window.MathJax = {
-            tex: {
-                inlineMath: [['$', '$'], ['\\(', '\\)']],
-                displayMath: [['\\[', '\\]']],
-                processEscapes: true
-            },
-            options: {
-                skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
-            }
-        };
+        // Simulate an async UI update that should not corrupt selection extraction.
+        setTimeout(() => {
+            const el = document.createElement("p");
+            el.textContent = "Async update: this paragraph was inserted after load.";
+            document.getElementById("test-content")?.appendChild(el);
+        }, 1500);
     </script>
-    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" async></script>
 </body>
 </html>
 

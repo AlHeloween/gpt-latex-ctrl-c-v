@@ -13,10 +13,8 @@ COPY_ITEMS = [
     "background.js",
     "content-script.js",
     "constants.js",
-    "page-mathjax-bridge.js",
     "assets",
     "icons",
-    "mathjax",
     "wasm",
 ]
 

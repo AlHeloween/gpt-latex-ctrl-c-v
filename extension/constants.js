@@ -5,12 +5,14 @@ const CONFIG = {
   CACHE_MAX_SIZE: 100,
   
   // Timeout settings (milliseconds)
-  MATHJAX_LOAD_TIMEOUT: 10000,
   LATEX_TO_MATHML_TIMEOUT: 5000,
   LATEX_TO_OMML_TIMEOUT: 8000,
   
   // Performance thresholds
   LARGE_SELECTION_THRESHOLD: 50000, // bytes
+  // When the selection HTML is very large, aggressively minimize it before clipboard write.
+  // This avoids browser/OS paste truncation while keeping content + math deterministic.
+  SELECTION_MINIFY_THRESHOLD: 200000, // characters (approx)
   
   // Notification settings
   NOTIFICATION_DURATION: 3000, // milliseconds
@@ -33,10 +35,9 @@ const CONFIG = {
     SELECTION_INVALID: "Selection is invalid. Please select text again.",
     SELECTION_LOST: "Selection was lost during processing. Please select again.",
     COPY_SUCCESS: "Copied to clipboard in Office format.",
+    COPY_MARKDOWN_SUCCESS: "Copied to clipboard as Markdown.",
     COPY_FAILED: "Copy failed; see console for details.",
     CLIPBOARD_DENIED: "Clipboard access denied. Please check permissions.",
-    MATHJAX_LOAD_TIMEOUT: "MathJax load timeout",
-    MATHJAX_LOAD_FAILED: "MathJax failed to load",
     XSLT_FETCH_FAILED: "XSLT fetch failed",
     XSLT_PARSE_ERROR: "XSLT parse error",
     MATHML_PARSE_ERROR: "MathML parse error",

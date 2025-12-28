@@ -10,7 +10,7 @@ Rule alignment:
 - Produces an inspectable artifact (static HTML) that can be selected deterministically.
 
 Usage:
-  uv run python tools/extract_gemini_fixture.py --in examples/selection_example.html --out examples/selection_example_static.html
+  uv run python tools/extract_gemini_fixture.py --in <FULL_SAVED_PAGE>.html --out examples/selection_example_static.html
   uv run python tools/capture_extension_payload.py --path examples/selection_example_static.html --selector "#extended-response-markdown-content" --out artifacts/gemini_payload.json
 """
 
@@ -132,7 +132,7 @@ def build_fixture(*, src: Path, dst: Path) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Extract static Gemini response fixture from a full saved page.")
-    parser.add_argument("--in", dest="src", default="examples/selection_example.html", help="Input HTML file (full Gemini page dump).")
+    parser.add_argument("--in", dest="src", required=True, help="Input HTML file (full Gemini page dump).")
     parser.add_argument("--out", dest="dst", default="examples/selection_example_static.html", help="Output HTML file (static subtree fixture).")
     args = parser.parse_args()
 

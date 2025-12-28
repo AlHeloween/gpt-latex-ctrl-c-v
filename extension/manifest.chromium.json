@@ -16,7 +16,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["mathjax/tex-mml-chtml.js", "assets/mathml2omml.xsl", "page-mathjax-bridge.js", "wasm/tex_to_mathml.wasm"],
+      "resources": ["assets/mathml2omml.xsl", "wasm/tex_to_mathml.wasm"],
       "matches": ["<all_urls>"]
     }
   ],

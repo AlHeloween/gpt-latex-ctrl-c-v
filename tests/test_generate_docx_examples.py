@@ -187,6 +187,12 @@ def _assert_docx_matches_payload(*, payload_json: Path, docx_path: Path) -> dict
     if not markers["docx_contains_plain_token"]:
         raise AssertionError(f"docx missing expected plain-text token: {word!r}")
 
+    # Guardrail: sqrt must not render as an n-root with an empty degree placeholder in Word.
+    # If the source payload contained a square-root (msqrt), require degHide in OMML output.
+    if "<msqrt" in wrapped.lower() or "\\sqrt" in wrapped:
+        if "<m:deghide" not in xml.lower():
+            raise AssertionError("sqrt detected but docx OMML lacks m:degHide (Word may show empty degree placeholder)")
+
     return markers
 
 

@@ -1,5 +1,5 @@
 """
-Build the Rust -> WebAssembly TeX-to-MathML converter and write it into extension/wasm/ for extension use.
+Build the Rust -> WebAssembly core converter and write it into extension/wasm/ for extension use.
 
 Determinism:
 - Uses Cargo.lock in rust/tex_to_mathml_wasm/ (pinned crate versions).

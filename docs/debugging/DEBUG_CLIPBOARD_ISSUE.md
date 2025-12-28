@@ -1,91 +1,34 @@
-# Debugging Clipboard Copy Issue
+# Debugging Clipboard Copy Issues
 
-## Problem
+## Symptom
+- The extension context-menu action runs, but clipboard output is empty/incorrect.
 
-Extension is activated but not copying anything to clipboard when formula is selected.
+## Common Causes
+1. Clipboard API permissions or user-gesture requirements.
+2. Selection extraction failing (dynamic DOM updates, cross-frame selections, shadow DOM).
+3. Conversion failure (malformed TeX/HTML, sanitizer stripping too much, unexpected tags).
 
-## Potential Issues
+## Quick Checks
+1. Open DevTools Console (F12) and look for `[Copy as Office Format]` logs.
+2. Verify the extension is loaded:
+   - Firefox: `about:debugging` -> "This Firefox" -> Inspect the extension.
+3. Repro with a simple page:
+   - Open any file in `examples/`, select plain text, right-click -> "Copy as Office Format".
 
-1. **Clipboard API Permissions**: Firefox may require explicit permissions
-2. **User Gesture Requirement**: Clipboard API requires user gesture (right-click should work)
-3. **Error Silently Swallowed**: Errors might be caught but not shown
-4. **MathJax Loading**: If MathJax fails to load, the copy might fail
-5. **Selection Loss**: Selection might be lost during async operations
-
-## Debugging Steps
-
-### 1. Check Browser Console
-
-Open Firefox console (F12) and look for:
-- `[Copy as Office Format]` messages
-- Error messages
-- Warnings about clipboard
-
-### 2. Check Extension Console
-
-1. Open `about:debugging`
-2. Find the extension
-3. Click "Inspect" next to "Copy as Office Format"
-4. Check console for errors
-
-### 3. Test with Simple Selection
-
-1. Select plain text (no formulas)
-2. Right-click → "Copy as Office Format"
-3. Check if it works
-
-### 4. Test Clipboard API Directly
-
-Open browser console and run:
-```javascript
-navigator.clipboard.writeText("test").then(() => console.log("Success")).catch(e => console.error("Error:", e));
+## Clipboard Sanity Test
+Run in the page console:
+```js
+navigator.clipboard
+  .writeText("clipboard-test")
+  .then(() => navigator.clipboard.readText())
+  .then((t) => console.log("OK:", t))
+  .catch((e) => console.error("Clipboard error:", e));
 ```
 
-### 5. Check Manifest Permissions
-
-Verify `manifest.json` has:
-```json
-"permissions": ["contextMenus", "activeTab", "clipboardWrite"]
-```
-
-## Common Issues
-
-### Issue 1: Clipboard API Not Available
-**Symptom**: No error, but nothing copied
-**Solution**: Check if `navigator.clipboard` exists
-
-### Issue 2: User Gesture Required
-**Symptom**: Works sometimes, fails other times
-**Solution**: Clipboard API requires user gesture (right-click is a gesture)
-
-### Issue 3: MathJax Loading Fails
-**Symptom**: Extension activates but copy fails
-**Solution**: Check console for MathJax errors
-
-### Issue 4: Selection Lost
-**Symptom**: "Selection lost" message
-**Solution**: Selection might be cleared during async operations
-
-## Quick Fix Test
-
-Add this to browser console to test clipboard:
-```javascript
-// Test if clipboard works
-navigator.clipboard.writeText("test").then(() => {
-    console.log("✅ Clipboard write works");
-    return navigator.clipboard.readText();
-}).then(text => {
-    console.log("✅ Clipboard read works, content:", text);
-}).catch(e => {
-    console.error("❌ Clipboard error:", e);
-});
-```
-
-## Next Steps
-
-1. Enable DEBUG mode in `extension/content-script.js`
-2. Check console for detailed logs
-3. Verify clipboard permissions
-4. Test with simple text first
-5. Then test with formulas
+## Next Step: Enable Debug Logs
+- Set `DEBUG = true` in `extension/content-script.js`.
+- Re-run the copy action and capture:
+  - console logs
+  - the extracted selection HTML (if logged)
+  - any error stack traces
 

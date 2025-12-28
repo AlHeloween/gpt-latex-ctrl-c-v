@@ -154,6 +154,8 @@
 
   <xsl:template match="ml:msqrt">
     <m:rad>
+      <!-- Square root: hide the degree to avoid Word showing an empty "n" placeholder. -->
+      <m:radPr><m:degHide m:val="1"/></m:radPr>
       <m:deg/>
       <m:e><xsl:apply-templates/></m:e>
     </m:rad>
@@ -161,6 +163,12 @@
 
   <xsl:template match="ml:mroot">
     <m:rad>
+      <m:radPr>
+        <!-- Hide degree when it is missing/empty or equals 2 (treat as sqrt). -->
+        <xsl:if test="not(ml:*[2]) or normalize-space(string(ml:*[2]))='' or (name(ml:*[2])='ml:mn' and normalize-space(string(ml:*[2]))='2')">
+          <m:degHide m:val="1"/>
+        </xsl:if>
+      </m:radPr>
       <m:deg><xsl:apply-templates select="ml:*[2]"/></m:deg>
       <m:e><xsl:apply-templates select="ml:*[1]"/></m:e>
     </m:rad>

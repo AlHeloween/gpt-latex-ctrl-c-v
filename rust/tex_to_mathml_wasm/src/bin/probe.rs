@@ -21,7 +21,11 @@ fn main() {
     }
 
     let latex = args.join(" ");
-    let style = if display { DisplayStyle::Block } else { DisplayStyle::Inline };
+    let style = if display {
+        DisplayStyle::Block
+    } else {
+        DisplayStyle::Inline
+    };
     match latex_to_mathml(&latex, style) {
         Ok(m) => {
             println!("{m}");
@@ -32,4 +36,3 @@ fn main() {
         }
     }
 }
-

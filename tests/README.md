@@ -1,6 +1,6 @@
 # Tests
 
-Primary test docs live in `docs/testing/`.
+Primary test docs live in `docs/testing/README.md`.
 
 Quick commands:
 - `uv run python tests/test_automated.py` - fully automated Chromium extension tests.

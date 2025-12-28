@@ -10,13 +10,11 @@
       "matches": ["<all_urls>"],
       "js": ["constants.js", "content-script.js"],
       "run_at": "document_idle",
-      "all_frames": false
+      "all_frames": true
     }
   ],
   "web_accessible_resources": [
-    "mathjax/tex-mml-chtml.js",
     "assets/mathml2omml.xsl",
-    "page-mathjax-bridge.js",
     "wasm/tex_to_mathml.wasm"
   ],
   "icons": { "48": "icons/icon48.png", "96": "icons/icon96.png" },

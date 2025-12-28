@@ -20,6 +20,10 @@ echo "Building Rust WASM (tex_to_mathml.wasm)..."
 uv run python ../tools/build_rust_wasm.py
 
 echo ""
+echo "Checking JS size budgets..."
+uv run python ../tools/check_js_size.py
+
+echo ""
 uv run python test_automated.py "$@"
 TESTS_RC=$?
 

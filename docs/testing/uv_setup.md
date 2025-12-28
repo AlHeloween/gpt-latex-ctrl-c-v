@@ -1,53 +1,28 @@
 # UV Setup for Testing
 
-This project uses `uv` for Python package management. Playwright with Firefox is already installed.
+This repo uses `uv` for Python package management.
 
-## Quick Start
-
-Simply run the tests:
+## Setup
 
 ```bash
-python tests/test_extension.py
+uv sync
+uv run playwright install chromium
 ```
 
-Or use the convenience script:
+## Run Tests
 
-**Windows:**
-```cmd
-tests\run_tests.bat
-```
+Use the convenience runner:
 
-**Linux/Mac:**
-```bash
-chmod +x tests/run_tests.sh
-./tests/run_tests.sh
-```
+- Windows: `tests\\run_tests.bat`
+- Linux/Mac: `./tests/run_tests.sh`
 
-## Dependencies
-
-The test suite requires:
-- `playwright` - Already installed via uv
-- `pyperclip` - Optional, for clipboard verification
-
-If you need to add `pyperclip`:
+Or run directly:
 
 ```bash
-uv add pyperclip
+uv run python tests/test_automated.py --browser chromium
 ```
 
-## Running Tests
+## Optional Dependencies
 
-The test script will:
-1. Launch Firefox with the extension loaded
-2. Open the test HTML file
-3. Select text with formulas
-4. Trigger the extension's copy function
-5. Verify clipboard content format
-
-## Notes
-
-- `python.exe` is mapped to the current uv venv
-- Playwright Firefox browser is already installed
-- Tests run in non-headless mode by default (set `headless=False` in test_extension.py)
-- For CI/CD, you may want to set `headless=True`
+- `pyperclip` is optional for local clipboard inspection helpers.
 
