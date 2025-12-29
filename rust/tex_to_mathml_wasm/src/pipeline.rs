@@ -7,6 +7,7 @@ use crate::tex;
 use html5ever::parse_document;
 use html5ever::tendril::TendrilSink;
 use markup5ever_rcdom::{Handle, NodeData, RcDom};
+use std::collections::HashMap;
 
 #[derive(Clone, Debug)]
 pub struct TexJob {
@@ -33,6 +34,55 @@ fn placeholder_for(id: usize, display: bool) -> String {
 
 fn parse_to_dom(input: &str) -> RcDom {
     parse_document(RcDom::default(), Default::default()).one(input)
+}
+
+fn keep_attrs_for_text_math(tag: &str, attrs: &HashMap<String, String>) -> Vec<(String, String)> {
+    let t = tag.to_ascii_lowercase();
+    let mut out: Vec<(String, String)> = Vec::new();
+    match t.as_str() {
+        "a" => {
+            if let Some(h) = attrs.get("href") {
+                // Basic href sanitization - only allow http/https/mailto
+                let href = h.trim();
+                if !href.is_empty() {
+                    let low = href.to_ascii_lowercase();
+                    if !low.starts_with("javascript:") && !low.starts_with("data:") && !low.starts_with("vbscript:") {
+                        out.push(("href".to_string(), href.to_string()));
+                    }
+                }
+            }
+            if let Some(v) = attrs.get("title") {
+                out.push(("title".to_string(), v.to_string()));
+            }
+        }
+        "img" => {
+            for k in ["src", "alt", "title", "width", "height"] {
+                if let Some(v) = attrs.get(k) {
+                    out.push((k.to_string(), v.to_string()));
+                }
+            }
+        }
+        "td" | "th" => {
+            for k in ["colspan", "rowspan"] {
+                if let Some(v) = attrs.get(k) {
+                    out.push((k.to_string(), v.to_string()));
+                }
+            }
+        }
+        "math" => {
+            if let Some(v) = attrs.get("xmlns") {
+                out.push(("xmlns".to_string(), v.to_string()));
+            }
+            if let Some(v) = attrs.get("display") {
+                out.push(("display".to_string(), v.to_string()));
+            }
+        }
+        _ => {
+            // For other tags, don't preserve style or other formatting attributes
+            // This prevents font-weight:bold or other styles from affecting all text
+        }
+    }
+    out
 }
 
 fn find_body_children(dom: &RcDom) -> Vec<Handle> {
@@ -263,11 +313,18 @@ fn inject_text_math_placeholders_in_sanitized_html(input_html: &str) -> (String,
                 let tag_lower = tag.to_ascii_lowercase();
                 let now_in_code = in_code || tag_lower == "code" || tag_lower == "pre";
 
+                // Build attributes map
+                let mut attrs_map: HashMap<String, String> = HashMap::new();
+                for a in attrs.borrow().iter() {
+                    attrs_map.insert(a.name.local.to_string(), a.value.to_string());
+                }
+                
+                // Filter attributes (same as sanitize.rs keep_attrs)
+                let kept_attrs = keep_attrs_for_text_math(&tag, &attrs_map);
+
                 out.push('<');
                 out.push_str(&tag);
-                for a in attrs.borrow().iter() {
-                    let k = a.name.local.to_string();
-                    let v = a.value.to_string();
+                for (k, v) in kept_attrs {
                     out.push(' ');
                     out.push_str(&k);
                     out.push_str("=\"");
@@ -437,97 +494,17 @@ pub fn html_to_office_with_mathml(input_html: &str) -> Result<String, String> {
     office_apply_mathml(&prepared.html, &joined)
 }
 
-fn inject_markdown_math_placeholders(md: &str) -> (String, Vec<TexJob>) {
-    let mut out = String::with_capacity(md.len());
-    let mut jobs: Vec<TexJob> = Vec::new();
-
-    let bytes = md.as_bytes();
-    let mut i: usize = 0;
-    let mut in_fence = false;
-    let mut in_inline_code = false;
-
-    while i < bytes.len() {
-        if md[i..].starts_with("```") {
-            in_fence = !in_fence;
-            out.push_str("```");
-            i += 3;
-            continue;
-        }
-        if in_fence {
-            out.push(bytes[i] as char);
-            i += 1;
-            continue;
-        }
-
-        if bytes[i] == b'`' {
-            in_inline_code = !in_inline_code;
-            out.push('`');
-            i += 1;
-            continue;
-        }
-        if in_inline_code {
-            out.push(bytes[i] as char);
-            i += 1;
-            continue;
-        }
-
-        if md[i..].starts_with("$$") {
-            if let Some(end_rel) = md[i + 2..].find("$$") {
-                let inner = &md[i + 2..i + 2 + end_rel];
-                let latex = normalize_latex(inner.trim());
-                let id = jobs.len();
-                jobs.push(TexJob {
-                    id,
-                    latex,
-                    display: true,
-                });
-                out.push_str(&placeholder_for(id, true));
-                i = i + 2 + end_rel + 2;
-                continue;
-            }
-        }
-        if md[i..].starts_with("\\[") {
-            if let Some(end_rel) = md[i + 2..].find("\\]") {
-                let inner = &md[i + 2..i + 2 + end_rel];
-                let latex = normalize_latex(inner.trim());
-                let id = jobs.len();
-                jobs.push(TexJob {
-                    id,
-                    latex,
-                    display: true,
-                });
-                out.push_str(&placeholder_for(id, true));
-                i = i + 2 + end_rel + 2;
-                continue;
-            }
-        }
-        if md[i..].starts_with("\\(") {
-            if let Some(end_rel) = md[i + 2..].find("\\)") {
-                let inner = &md[i + 2..i + 2 + end_rel];
-                let latex = normalize_latex(inner.trim());
-                let id = jobs.len();
-                jobs.push(TexJob {
-                    id,
-                    latex,
-                    display: false,
-                });
-                out.push_str(&placeholder_for(id, false));
-                i = i + 2 + end_rel + 2;
-                continue;
-            }
-        }
-
-        out.push(bytes[i] as char);
-        i += 1;
-    }
-
-    (out, jobs)
-}
 
 pub fn markdown_to_office_prepared(md: &str) -> PreparedOffice {
-    let (md_with_placeholders, jobs) = inject_markdown_math_placeholders(md);
-    let html = markdown_to_html_string(&md_with_placeholders);
-    let html = html_to_office_html(&html);
+    // Convert markdown to HTML first, then use DOM-based parsing (same as HTML path)
+    let html = markdown_to_html_string(md);
+    // Use the same DOM-based processing pipeline as html_to_office_prepared
+    let (without_tex, jobs) = replace_data_math_blocks_with_placeholders_dom(&html);
+    let sanitized = sanitize_for_office(&without_tex);
+    let (with_text_math, mut more_jobs) = inject_text_math_placeholders_in_sanitized_html(&sanitized);
+    let mut jobs = jobs;
+    jobs.append(&mut more_jobs);
+    let html = html_to_office_html(&with_text_math);
     PreparedOffice { html, jobs }
 }
 

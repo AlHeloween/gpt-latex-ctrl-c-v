@@ -36,12 +36,35 @@
     const text = got.text;
     if (!String(text || "").trim()) throw new Error("no selection");
 
+    diag("copyOfficeFormatLastStage", "wasm");
     const w = await wasm.load();
-    const withMath = wasm.call1(w, "markdown_to_office_with_mathml", text);
-    const wrappedHtml = await xslt.convertMathmlToOmmlInHtmlString(withMath);
+    let withMath;
+    try {
+      withMath = wasm.call1(w, "markdown_to_office_with_mathml", text);
+      if (!withMath || typeof withMath !== "string") {
+        throw new Error("WASM markdown conversion returned invalid result");
+      }
+    } catch (e) {
+      const errMsg = String(e?.message || e || "unknown error");
+      diag("copyOfficeFormatWasmMarkdownError", errMsg);
+      // Check if it's a WASM panic/unreachable error
+      if (errMsg.includes("unreachable") || errMsg.includes("RuntimeError")) {
+        throw new Error(`Markdown conversion crashed. This may be due to invalid markdown syntax or formulas. Error: ${errMsg}`);
+      }
+      throw new Error(`Markdown conversion failed: ${errMsg}`);
+    }
 
+    diag("copyOfficeFormatLastStage", "xslt");
+    const wrappedHtml = await xslt.convertMathmlToOmmlInHtmlString(withMath);
+    if (!wrappedHtml || typeof wrappedHtml !== "string") {
+      throw new Error("XSLT conversion returned invalid result");
+    }
+
+    diag("copyOfficeFormatLastStage", "clipboard");
     const r = await clipboard.writeHtml({ html: wrappedHtml, text });
     if (!r?.ok) throw new Error(String(r?.error || "Clipboard write unavailable."));
+
+    diag("copyOfficeFormatLastStage", "done");
     return true;
   }
 

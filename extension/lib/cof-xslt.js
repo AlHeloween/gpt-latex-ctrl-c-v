@@ -55,7 +55,10 @@
         const proc = new XSLTProcessor();
         proc.importStylesheet(xslt);
         const mathmlDoc = new DOMParser().parseFromString(match, "application/xml");
-        if (!mathmlDoc.querySelector("parsererror")) {
+        const parserError = mathmlDoc.querySelector("parsererror");
+        if (parserError) {
+          diag("copyOfficeFormatMathmlParseError", parserError.textContent || "MathML parse error");
+        } else {
           const ommlDoc = proc.transformToDocument(mathmlDoc);
           if (ommlDoc?.documentElement) {
             const omml = new XMLSerializer().serializeToString(ommlDoc.documentElement);
@@ -66,6 +69,8 @@
             const ms = `<!--[if gte msEquation 12]>${omml}<![endif]-->`;
             const fb = `<![if !msEquation]>${match}<![endif]>`;
             wrapped = `<span style="${style}">${ms}${fb}</span>`;
+          } else {
+            diag("copyOfficeFormatXsltTransformError", "No documentElement in OMML transform result");
           }
         }
       } catch (e) {
