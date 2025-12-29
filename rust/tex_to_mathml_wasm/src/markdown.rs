@@ -77,6 +77,7 @@ pub fn html_to_markdown_text(input: &str) -> String {
     let mut link_stack: Vec<Option<String>> = Vec::new();
     let mut skip_depth: u32 = 0; // used for "math span" content skipping
     let mut link_text_stack: Vec<String> = Vec::new();
+    let mut skip_leading_whitespace_in_li: bool = false; // skip whitespace right after opening <li>
 
     fn attr_val(raw: &str, name: &str) -> Option<String> {
         let low = raw.to_ascii_lowercase();
@@ -112,10 +113,19 @@ pub fn html_to_markdown_text(input: &str) -> String {
         };
         let lt = i + lt_rel;
         if skip_depth == 0 {
-            if let Some(buf) = link_text_stack.last_mut() {
-                buf.push_str(&input[i..lt]);
+            let text_content = &input[i..lt];
+            let text_to_write = if skip_leading_whitespace_in_li {
+                // Skip leading whitespace/newlines after opening <li>
+                let trimmed = text_content.trim_start_matches(|c: char| c.is_whitespace());
+                skip_leading_whitespace_in_li = false; // Reset flag after first text content
+                trimmed
             } else {
-                out.push_str(&input[i..lt]);
+                text_content
+            };
+            if let Some(buf) = link_text_stack.last_mut() {
+                buf.push_str(text_to_write);
+            } else {
+                out.push_str(text_to_write);
             }
         }
         i = lt;
@@ -204,6 +214,11 @@ pub fn html_to_markdown_text(input: &str) -> String {
             }
         }
 
+        // Reset the flag if we encounter any tag (we've moved past the initial whitespace area)
+        if !is_end && skip_leading_whitespace_in_li && lower != "li" {
+            skip_leading_whitespace_in_li = false;
+        }
+
         match (is_end, lower.as_str()) {
             (false, "br") => out.push('\n'),
             (false, "p") | (false, "div") => {
@@ -281,6 +296,7 @@ pub fn html_to_markdown_text(input: &str) -> String {
                 } else {
                     out.push_str("- ");
                 }
+                skip_leading_whitespace_in_li = true; // Skip whitespace after opening <li>
             }
             (true, "li") => {
                 if !out.ends_with('\n') {

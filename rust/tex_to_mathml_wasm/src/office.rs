@@ -93,6 +93,9 @@ pub fn html_to_office_html(input: &str) -> String {
             "blockquote" => extra_style = Some("border-left:3px solid #ccc; margin:0 0 0 0; padding-left:12px; color:#555;"),
             "table" => extra_style = Some("border-collapse:collapse;"),
             "th" | "td" => extra_style = Some("border:1px solid #ddd; padding:4px 6px;"),
+            "ul" | "ol" => extra_style = Some("margin:0 0 0 0; padding-left:40px;"),
+            "li" => extra_style = Some("margin:0 0 0 0;"),
+            "img" => extra_style = Some("max-width:100%; height:auto; vertical-align:middle;"),
             _ => {}
         }
 
