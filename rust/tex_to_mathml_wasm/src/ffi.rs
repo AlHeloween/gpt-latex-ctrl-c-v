@@ -87,3 +87,19 @@ pub fn write_out(text: &str) -> u32 {
     std::mem::forget(out);
     out_ptr
 }
+
+pub fn write_out_binary(data: &[u8]) -> u32 {
+    unsafe {
+        LAST_ERR_CODE = 0;
+        LAST_ERR_PTR = 0;
+        LAST_ERR_LEN = 0;
+    }
+    let mut out = Vec::<u8>::with_capacity(data.len());
+    out.extend_from_slice(data);
+    unsafe {
+        LAST_LEN = out.len() as u32;
+    }
+    let out_ptr = out.as_mut_ptr() as u32;
+    std::mem::forget(out);
+    out_ptr
+}

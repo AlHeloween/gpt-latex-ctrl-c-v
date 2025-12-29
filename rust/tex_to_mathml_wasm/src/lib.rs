@@ -1,3 +1,4 @@
+mod docx;
 mod entities;
 mod ffi;
 mod json;
@@ -8,7 +9,7 @@ mod pipeline;
 mod sanitize;
 mod tex;
 
-use crate::ffi::{read_utf8, set_error, write_out};
+use crate::ffi::{read_utf8, set_error, write_out, write_out_binary};
 
 #[no_mangle]
 pub extern "C" fn api_version() -> u32 {
@@ -205,6 +206,29 @@ pub extern "C" fn office_apply_mathml(
         Ok(out) => write_out(&out),
         Err(msg) => {
             set_error(4, &msg);
+            0
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn html_to_docx(ptr: u32, len: u32) -> u32 {
+    let s = match read_utf8(ptr, len) {
+        Ok(s) => s,
+        Err(1) => {
+            set_error(1, "empty input");
+            return 0;
+        }
+        Err(_) => {
+            set_error(2, "input is not valid UTF-8");
+            return 0;
+        }
+    };
+
+    match docx::html_with_omml_to_docx(s) {
+        Ok(docx_bytes) => write_out_binary(&docx_bytes),
+        Err(msg) => {
+            set_error(5, &msg);
             0
         }
     }

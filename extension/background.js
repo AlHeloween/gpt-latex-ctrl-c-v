@@ -68,6 +68,7 @@ async function writeClipboardViaAsyncApi(payload) {
     return true;
   }
 
+
   return false;
 }
 

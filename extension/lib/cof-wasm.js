@@ -76,9 +76,24 @@
     return out;
   }
 
+  function call1Binary(w, fn, s) {
+    const e = w.e;
+    const bytes = new TextEncoder().encode(String(s || ""));
+    const ptr = e.alloc(bytes.length);
+    new Uint8Array(w.mem.buffer, ptr, bytes.length).set(bytes);
+    const outPtr = e[fn](ptr, bytes.length);
+    e.dealloc(ptr, bytes.length);
+    if (!outPtr) throw new Error(lastError(w));
+    const outLen = e.last_len();
+    const out = new Uint8Array(w.mem.buffer, outPtr, outLen);
+    const result = new Uint8Array(out); // Copy the data
+    e.dealloc(outPtr, outLen);
+    return result;
+  }
+
   void load().catch((e) =>
     diag("copyOfficeFormatWasmPreloadError", e?.message || e || ""),
   );
 
-  cof.wasm = { load, call1, call2 };
+  cof.wasm = { load, call1, call2, call1Binary };
 })();

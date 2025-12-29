@@ -25,3 +25,5 @@ test_results/
 .DS_Store
 Thumbs.db
 .vscode/
+
+html-to-docx/*
