@@ -1,9 +1,8 @@
 use crate::entities::decode_entities;
-use crate::markdown::{html_to_markdown_text, markdown_to_html_string};
+use crate::markdown::markdown_to_html_string;
 use crate::normalize::normalize_latex;
 use crate::office::html_to_office_html;
 use crate::sanitize::sanitize_for_office;
-use crate::selection;
 use crate::tex;
 use html5ever::parse_document;
 use html5ever::tendril::TendrilSink;
@@ -305,183 +304,118 @@ fn inject_text_math_placeholders_in_sanitized_html(input_html: &str) -> (String,
     (out, jobs)
 }
 
-fn find_tag_end(input: &str, lt: usize) -> Option<usize> {
-    let bytes = input.as_bytes();
-    let mut i = lt;
-    let mut in_s = false;
-    let mut in_d = false;
-    while i < bytes.len() {
-        let c = bytes[i] as char;
-        match c {
-            '\'' if !in_d => in_s = !in_s,
-            '"' if !in_s => in_d = !in_d,
-            '>' if !in_s && !in_d => return Some(i),
-            _ => {}
-        }
-        i += 1;
-    }
-    None
+fn is_drop_content_tag(lower: &str) -> bool {
+    matches!(
+        lower,
+        "script" | "style" | "noscript" | "template" | "iframe" | "object" | "embed" | "svg"
+    )
 }
 
-fn parse_tag_name(raw: &str) -> Option<&str> {
-    let t = raw.trim_start();
-    let t = t.strip_prefix('/').unwrap_or(t).trim_start();
-    if t.is_empty() {
-        return None;
-    }
-    let end = t
-        .find(|c: char| c.is_whitespace() || c == '/' || c == '>')
-        .unwrap_or(t.len());
-    Some(&t[..end])
-}
-
-fn attr_val(raw: &str, name: &str) -> Option<String> {
-    let low = raw.to_ascii_lowercase();
-    let needle = format!("{name}=");
-    let idx = low.find(&needle)?;
-    let after = &raw[idx + needle.len()..].trim_start();
-    if after.starts_with('"') {
-        let rest = &after[1..];
-        let end = rest.find('"')?;
-        return Some(rest[..end].to_string());
-    }
-    if after.starts_with('\'') {
-        let rest = &after[1..];
-        let end = rest.find('\'')?;
-        return Some(rest[..end].to_string());
-    }
-    let end = after
-        .find(|c: char| c.is_whitespace() || c == '>')
-        .unwrap_or(after.len());
-    if end == 0 {
-        None
-    } else {
-        Some(after[..end].to_string())
-    }
-}
-
-fn is_block_math(tag_name: &str, raw_tag: &str) -> bool {
-    let n = tag_name.to_ascii_lowercase();
+fn is_block_math_dom(tag_lower: &str, class_lower: &str) -> bool {
     if matches!(
-        n.as_str(),
+        tag_lower,
         "div" | "p" | "li" | "section" | "article" | "td" | "th"
     ) {
         return true;
     }
-    raw_tag.to_ascii_lowercase().contains("math-block")
+    class_lower.contains("math-block") || class_lower.contains("katex-display")
 }
 
-fn find_matching_end_tag(input: &str, mut i: usize, tag_name: &str) -> Option<usize> {
-    let t = tag_name.to_ascii_lowercase();
-    let needle_open = format!("<{t}");
-    let needle_close = format!("</{t}");
-    let lower = input.to_ascii_lowercase();
-    let mut depth: i32 = 1;
-
-    while i < lower.len() {
-        let lt_rel = lower[i..].find('<')?;
-        let lt = i + lt_rel;
-
-        if lower[lt..].starts_with("<!--") {
-            if let Some(end) = lower[lt + 4..].find("-->") {
-                i = lt + 4 + end + 3;
-                continue;
-            }
-        }
-
-        if lower[lt..].starts_with(&needle_close) {
-            if let Some(gt) = find_tag_end(input, lt) {
-                depth -= 1;
-                if depth == 0 {
-                    return Some(gt + 1);
-                }
-                i = gt + 1;
-                continue;
-            }
-        }
-
-        if lower[lt..].starts_with(&needle_open) {
-            let after = lt + needle_open.len();
-            let boundary_ok = lower
-                .get(after..after + 1)
-                .map(|c| c == " " || c == "\n" || c == "\r" || c == "\t" || c == ">" || c == "/")
-                .unwrap_or(true);
-            if boundary_ok {
-                if let Some(gt) = find_tag_end(input, lt) {
-                    depth += 1;
-                    i = gt + 1;
-                    continue;
-                }
-            }
-        }
-
-        i = lt + 1;
-    }
-
-    None
-}
-
-fn replace_data_math_blocks_with_placeholders(input: &str) -> (String, Vec<TexJob>) {
-    let mut out = String::with_capacity(input.len());
+fn replace_data_math_blocks_with_placeholders_dom(input_html: &str) -> (String, Vec<TexJob>) {
+    let dom = parse_to_dom(input_html);
+    let children = find_body_children(&dom);
+    let mut out = String::with_capacity(input_html.len() + 256);
     let mut jobs: Vec<TexJob> = Vec::new();
 
-    let mut i: usize = 0;
-    while let Some(lt_rel) = input[i..].find('<') {
-        let lt = i + lt_rel;
-        out.push_str(&input[i..lt]);
+    fn walk(node: &Handle, out: &mut String, jobs: &mut Vec<TexJob>, in_drop: bool, in_math: bool) {
+        match &node.data {
+            NodeData::Text { contents } => {
+                out.push_str(&esc_text(&contents.borrow().to_string()));
+            }
+            NodeData::Comment { contents } => {
+                out.push_str("<!--");
+                out.push_str(contents);
+                out.push_str("-->");
+            }
+            NodeData::Doctype { .. } | NodeData::ProcessingInstruction { .. } => {}
+            NodeData::Document => {
+                for c in node.children.borrow().iter() {
+                    walk(c, out, jobs, in_drop, in_math);
+                }
+            }
+            NodeData::Element { name, attrs, .. } => {
+                let tag = name.local.to_string();
+                let tag_lower = tag.to_ascii_lowercase();
 
-        if input[lt..].starts_with("<!--") {
-            if let Some(end) = input[lt + 4..].find("-->") {
-                let j = lt + 4 + end + 3;
-                out.push_str(&input[lt..j]);
-                i = j;
-                continue;
+                let now_in_drop = in_drop || is_drop_content_tag(&tag_lower);
+                if now_in_drop {
+                    return;
+                }
+
+                let now_in_math = in_math || tag_lower == "math";
+
+                let mut data_math: Option<String> = None;
+                let mut class_lower = String::new();
+                for a in attrs.borrow().iter() {
+                    let k = a.name.local.to_string();
+                    let v = a.value.to_string();
+                    if k.eq_ignore_ascii_case("data-math") {
+                        data_math = Some(decode_entities(&v));
+                    } else if k.eq_ignore_ascii_case("class") {
+                        class_lower = v.to_ascii_lowercase();
+                    }
+                }
+
+                if !now_in_math {
+                    if let Some(tex_raw) = data_math {
+                        let id = jobs.len();
+                        let display = is_block_math_dom(&tag_lower, &class_lower);
+                        let latex = normalize_latex(tex_raw.trim());
+                        jobs.push(TexJob { id, latex, display });
+                        out.push_str(&placeholder_for(id, display));
+                        return;
+                    }
+                }
+
+                out.push('<');
+                out.push_str(&tag);
+                for a in attrs.borrow().iter() {
+                    let k = a.name.local.to_string();
+                    let v = a.value.to_string();
+                    out.push(' ');
+                    out.push_str(&k);
+                    out.push_str("=\"");
+                    out.push_str(&esc_attr(&v));
+                    out.push('"');
+                }
+
+                if is_void(&tag) {
+                    out.push_str("/>");
+                    return;
+                }
+
+                out.push('>');
+                for c in node.children.borrow().iter() {
+                    walk(c, out, jobs, now_in_drop, now_in_math);
+                }
+                out.push_str("</");
+                out.push_str(&tag);
+                out.push('>');
             }
         }
-
-        let Some(gt) = find_tag_end(input, lt) else {
-            out.push('<');
-            i = lt + 1;
-            continue;
-        };
-        let raw = &input[lt + 1..gt];
-        let raw_trim = raw.trim();
-        let is_end = raw_trim.starts_with('/');
-        let Some(tag_name) = parse_tag_name(raw_trim) else {
-            out.push_str(&input[lt..=gt]);
-            i = gt + 1;
-            continue;
-        };
-
-        if is_end {
-            out.push_str(&input[lt..=gt]);
-            i = gt + 1;
-            continue;
-        }
-
-        let dm = attr_val(raw_trim, "data-math").map(|v| decode_entities(&v));
-        if let Some(tex_raw) = dm {
-            let id = jobs.len();
-            let display = is_block_math(tag_name, raw_trim);
-            let latex = normalize_latex(tex_raw.trim());
-            jobs.push(TexJob { id, latex, display });
-
-            let end = find_matching_end_tag(input, gt + 1, tag_name).unwrap_or(gt + 1);
-            out.push_str(&placeholder_for(id, display));
-            i = end;
-            continue;
-        }
-
-        out.push_str(&input[lt..=gt]);
-        i = gt + 1;
     }
 
-    out.push_str(&input[i..]);
+    for c in children {
+        walk(&c, &mut out, &mut jobs, false, false);
+    }
+
     (out, jobs)
 }
 
 pub fn html_to_office_prepared(input_html: &str) -> PreparedOffice {
-    let (without_tex, jobs) = replace_data_math_blocks_with_placeholders(input_html);
+    // DOM-based extraction avoids creating data-math jobs inside content that we will drop anyway
+    // (e.g., svg/template/script), which can otherwise cause placeholder/job count mismatches.
+    let (without_tex, jobs) = replace_data_math_blocks_with_placeholders_dom(input_html);
     let sanitized = sanitize_for_office(&without_tex);
     let (with_text_math, mut more_jobs) = inject_text_math_placeholders_in_sanitized_html(&sanitized);
     let mut jobs = jobs;
@@ -501,56 +435,6 @@ pub fn html_to_office_with_mathml(input_html: &str) -> Result<String, String> {
     }
     let joined = out_mathml.join("\u{001F}");
     office_apply_mathml(&prepared.html, &joined)
-}
-
-pub fn page_selection_to_office_with_mathml(page_html: &str, token_pairs: &str) -> Result<String, String> {
-    let record_sep = '\u{001E}';
-    let pair_sep = '\u{001F}';
-    let mut out = String::new();
-
-    for pair in token_pairs.split(record_sep) {
-        if pair.is_empty() {
-            continue;
-        }
-        let mut it = pair.split(pair_sep);
-        let start = it.next().unwrap_or("");
-        let end = it.next().unwrap_or("");
-        if start.is_empty() || end.is_empty() {
-            return Err("token_pairs must be (start\\u001Fend) joined by \\u001E".to_string());
-        }
-        out.push_str(&selection::extract_fragment_by_comment_tokens(page_html, start, end)?);
-    }
-
-    if out.is_empty() {
-        return Err("no selection extracted".to_string());
-    }
-
-    html_to_office_with_mathml(&out)
-}
-
-pub fn page_selection_to_markdown(page_html: &str, token_pairs: &str) -> Result<String, String> {
-    let record_sep = '\u{001E}';
-    let pair_sep = '\u{001F}';
-    let mut out = String::new();
-
-    for pair in token_pairs.split(record_sep) {
-        if pair.is_empty() {
-            continue;
-        }
-        let mut it = pair.split(pair_sep);
-        let start = it.next().unwrap_or("");
-        let end = it.next().unwrap_or("");
-        if start.is_empty() || end.is_empty() {
-            return Err("token_pairs must be (start\\u001Fend) joined by \\u001E".to_string());
-        }
-        out.push_str(&selection::extract_fragment_by_comment_tokens(page_html, start, end)?);
-    }
-
-    if out.is_empty() {
-        return Err("no selection extracted".to_string());
-    }
-
-    Ok(html_to_markdown_text(&out))
 }
 
 fn inject_markdown_math_placeholders(md: &str) -> (String, Vec<TexJob>) {
@@ -673,12 +557,27 @@ pub fn office_apply_mathml(html: &str, joined_mathml: &str) -> Result<String, St
     }
 
     let mut out = html.to_string();
+    let mut missing: Vec<usize> = Vec::new();
     for (idx, mathml) in parts.iter().enumerate() {
         let marker = format!("<!--COF_TEX_{idx}-->");
         if !out.contains(&marker) {
-            return Err(format!("missing placeholder for job {idx}"));
+            missing.push(idx);
+            continue;
         }
         out = out.replace(&marker, mathml);
+    }
+
+    if !missing.is_empty() {
+        // Non-fatal: keep output usable even if some placeholders were dropped by sanitization
+        // (e.g., data-math inside dropped SVG/template content). Record a deterministic artifact.
+        out.push_str("<!--COF_WARN_MISSING_PLACEHOLDER:");
+        for (i, idx) in missing.iter().enumerate() {
+            if i > 0 {
+                out.push(',');
+            }
+            out.push_str(&idx.to_string());
+        }
+        out.push_str("-->");
     }
 
     Ok(out)

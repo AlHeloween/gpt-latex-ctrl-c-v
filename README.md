@@ -2,6 +2,8 @@
 
 Firefox extension that copies your current selection as **Office-friendly HTML** and converts math into **real Word equations** (MathML -> OMML on paste).
 
+Design principle: deterministic, inspectable pipeline (selection HTML via `Range.cloneContents()`, clipboard writes via `navigator.clipboard.*` / MV3 offscreen writer; no native copy triggers).
+
 It also supports:
 
 - **Copy as Markdown** (writes Markdown to the clipboard)

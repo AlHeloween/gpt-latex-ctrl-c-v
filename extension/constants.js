@@ -13,6 +13,9 @@ const CONFIG = {
   // When the selection HTML is very large, aggressively minimize it before clipboard write.
   // This avoids browser/OS paste truncation while keeping content + math deterministic.
   SELECTION_MINIFY_THRESHOLD: 200000, // characters (approx)
+  // Hard guardrail: refuse to pass extremely large HTML strings into WASM in one call.
+  // When exceeded, copy fails with an explicit diagnostic (avoid OOM / silent truncation).
+  MAX_WASM_INPUT_CHARS: 25000000, // ~25MB of UTF-16 code units
 
   // Notification settings
   NOTIFICATION_DURATION: 3000, // milliseconds

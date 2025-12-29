@@ -6,7 +6,6 @@ mod normalize;
 mod office;
 mod pipeline;
 mod sanitize;
-mod selection;
 mod tex;
 
 use crate::ffi::{read_utf8, set_error, write_out};
@@ -211,82 +210,3 @@ pub extern "C" fn office_apply_mathml(
     }
 }
 
-#[no_mangle]
-pub extern "C" fn page_selection_to_office_with_mathml(
-    page_ptr: u32,
-    page_len: u32,
-    pairs_ptr: u32,
-    pairs_len: u32,
-) -> u32 {
-    let page = match read_utf8(page_ptr, page_len) {
-        Ok(s) => s,
-        Err(1) => {
-            set_error(1, "empty page_html");
-            return 0;
-        }
-        Err(_) => {
-            set_error(2, "page_html is not valid UTF-8");
-            return 0;
-        }
-    };
-
-    let pairs = match read_utf8(pairs_ptr, pairs_len) {
-        Ok(s) => s,
-        Err(1) => {
-            set_error(1, "empty token_pairs");
-            return 0;
-        }
-        Err(_) => {
-            set_error(2, "token_pairs is not valid UTF-8");
-            return 0;
-        }
-    };
-
-    match pipeline::page_selection_to_office_with_mathml(page, pairs) {
-        Ok(out) => write_out(&out),
-        Err(msg) => {
-            set_error(4, &msg);
-            0
-        }
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn page_selection_to_markdown(
-    page_ptr: u32,
-    page_len: u32,
-    pairs_ptr: u32,
-    pairs_len: u32,
-) -> u32 {
-    let page = match read_utf8(page_ptr, page_len) {
-        Ok(s) => s,
-        Err(1) => {
-            set_error(1, "empty page_html");
-            return 0;
-        }
-        Err(_) => {
-            set_error(2, "page_html is not valid UTF-8");
-            return 0;
-        }
-    };
-
-    let pairs = match read_utf8(pairs_ptr, pairs_len) {
-        Ok(s) => s,
-        Err(1) => {
-            set_error(1, "empty token_pairs");
-            return 0;
-        }
-        Err(_) => {
-            set_error(2, "token_pairs is not valid UTF-8");
-            return 0;
-        }
-    };
-
-    match pipeline::page_selection_to_markdown(page, pairs) {
-        Ok(out) => write_out(&out),
-        Err(msg) => {
-            set_error(4, &msg);
-            0
-        }
-    }
-}

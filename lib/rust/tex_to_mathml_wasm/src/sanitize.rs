@@ -209,7 +209,7 @@ fn sanitize_node(node: &Handle, in_math: bool, in_li: bool) -> Vec<OutNode> {
 
             let attrs = attrs_map(node);
 
-            if tag_lower == "mjx-container" || (tag_lower == "span" && has_katex_class(&attrs)) {
+            if tag_lower == "span" && has_katex_class(&attrs) {
                 if let Some(m) = find_first_math(node) {
                     return sanitize_node(&m, false, in_li);
                 }
@@ -361,13 +361,7 @@ mod tests {
         assert!(out.contains("<p>Ok</p>"));
     }
 
-    #[test]
-    fn collapses_mjx_container_to_mathml() {
-        let html = r#"<div><mjx-container><mjx-assistive-mml><math xmlns="http://www.w3.org/1998/Math/MathML"><mi>a</mi></math></mjx-assistive-mml></mjx-container></div>"#;
-        let out = sanitize_for_office(html);
-        assert!(out.contains("<math"));
-        assert!(!out.to_ascii_lowercase().contains("mjx-container"));
-    }
+
 
     #[test]
     fn does_not_panic_on_unicode_text() {

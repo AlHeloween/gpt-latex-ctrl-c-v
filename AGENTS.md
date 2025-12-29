@@ -44,7 +44,9 @@
 - **Operating principle:** prefer raw, inspectable mechanisms (HTTP fetch + DOM parse + explicit assertions) over black-box orchestration (implicit "loaded" events, "network idle", hidden readiness flags).
 - **Success criterion (Exact):** every automated step must have an explicit **precondition**, **action**, and **postcondition** that can be verified from artifacts (HTML snapshot, console log, screenshot, diff).
 
-**Clipboard determinism (Exact):** never use a browser's native "copy selection" behavior as a source of truth. Concretely, do **not** rely on the browser to generate clipboard HTML from the active selection (or any implicit copy pipeline). Always extract selection HTML deterministically (DOM snapshot + explicit anchors) and generate the clipboard payload explicitly, with verifiable artifacts/validation.
+**Clipboard determinism (Exact):** never use a browser's native "copy selection" behavior as a source of truth. Concretely, do **not** rely on the browser to generate clipboard HTML from the active selection (or any implicit copy pipeline). Always extract selection HTML deterministically via `Range.cloneContents()` → `container.innerHTML` and generate the clipboard payload explicitly, with verifiable artifacts/validation.
+
+**ABSOLUTE (Exact): NEVER use browser-native copy/paste functions** as part of the extension pipeline (including any implicit/native "copy selection" behavior). Treat them as non-deterministic and non-debuggable.
 **Banned (Exact):** using the browser's native copy pipeline as a *source of truth* (i.e., "copy selection" and accept whatever HTML the browser generates).
 
 **Banned (Exact):** never call `document.execCommand('copy')` (or any equivalent "native copy" trigger) anywhere in the extension. Clipboard writes must use explicit, inspectable APIs (`navigator.clipboard.write([ClipboardItem])` / `navigator.clipboard.writeText`) and must fail fast with a debuggable error if unavailable.
@@ -136,7 +138,7 @@ Fail fast with evidence: On failure, provide reproduction steps, artifacts list,
   - Office HTML: "Copy as Office Format" (default)
   - Office from Markdown: "Copy as Office Format (Markdown selection)"
   - Markdown export: "Copy as Markdown"
-- Clipboard HTML is provided as fragment-only `text/html` (no Windows CF_HTML header, no `<html>/<body>` wrapper, no `StartFragment` markers).
+- Clipboard HTML is provided to the browser as a fragment `text/html` payload; the browser will wrap it into OS-native formats (e.g., Windows CF_HTML) when writing to the clipboard.
 - TeX->MathML is performed via Rust/WASM in the content script (no external renderer fallback).
 - Rust/WASM owns the deterministic "transition tables" (HTML->Office, HTML->Markdown, Markdown->HTML); JS should stay focused on selection/extraction + clipboard write + MathML->OMML XSLT.
 

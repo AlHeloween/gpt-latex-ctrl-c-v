@@ -204,13 +204,6 @@ pub fn html_to_markdown_text(input: &str) -> String {
             }
         }
 
-        // Skip heavy wrappers; content may be huge and not useful for Markdown export.
-        if !is_end && (lower == "mjx-container" || lower == "mjx-assistive-mml") {
-            skip_depth = 1;
-            i = gt + 1;
-            continue;
-        }
-
         match (is_end, lower.as_str()) {
             (false, "br") => out.push('\n'),
             (false, "p") | (false, "div") => {

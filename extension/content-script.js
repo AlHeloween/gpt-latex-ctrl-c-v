@@ -17,14 +17,8 @@
     diag("copyOfficeFormatLastStage", "wasm");
     const w = await wasm.load();
     const html = got.html || "";
-    let withMath = "";
-    if (Array.isArray(got.pairs) && got.pairs.length > 0 && html) {
-      const pairs = got.pairs.map((p) => `${p[0]}\u001F${p[1]}`).join("\u001E");
-      withMath = wasm.call2(w, "page_selection_to_office_with_mathml", html, pairs);
-    } else {
-      if (!html) throw new Error("no selection html");
-      withMath = wasm.call1(w, "html_to_office_with_mathml", html);
-    }
+    if (!html) throw new Error("no selection html");
+    const withMath = wasm.call1(w, "html_to_office_with_mathml", html);
 
     diag("copyOfficeFormatLastStage", "xslt");
     let wrappedHtml = await xslt.convertMathmlToOmmlInHtmlString(withMath);
@@ -58,13 +52,7 @@
     if (!String(text || "").trim()) throw new Error("no selection");
 
     const w = await wasm.load();
-    let md = "";
-    if (Array.isArray(got.pairs) && got.pairs.length > 0 && html) {
-      const pairs = got.pairs.map((p) => `${p[0]}\u001F${p[1]}`).join("\u001E");
-      md = wasm.call2(w, "page_selection_to_markdown", html, pairs);
-    } else {
-      md = html ? wasm.call1(w, "html_to_markdown", html) : text;
-    }
+    const md = html ? wasm.call1(w, "html_to_markdown", html) : text;
     const r = await clipboard.writeText(md);
     if (!r?.ok) throw new Error(String(r?.error || "Clipboard writeText unavailable."));
     return true;

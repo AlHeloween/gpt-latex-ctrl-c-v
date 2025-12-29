@@ -38,62 +38,34 @@
       if (extracted) return { html: extracted, text };
     }
 
-    const ranges = [];
-    for (let i = 0; i < sel.rangeCount; i++) ranges.push(sel.getRangeAt(i).cloneRange());
     try {
-      const markers = [];
-      const pairs = [];
-      const toastEl = document.getElementById("__cof_toast");
-      const toastParent = toastEl ? toastEl.parentNode : null;
-      const toastNext = toastEl ? toastEl.nextSibling : null;
-      if (toastEl && toastParent) {
-        try {
-          toastParent.removeChild(toastEl);
-        } catch (e) {
-          diag("copyOfficeFormatNonFatalError", e);
+      const maxChars =
+        Number(globalThis.CONFIG?.MAX_WASM_INPUT_CHARS) || 25_000_000;
+      const div = document.createElement("div");
+      for (let i = 0; i < sel.rangeCount; i++) {
+        div.appendChild(sel.getRangeAt(i).cloneContents());
+        if (i + 1 < sel.rangeCount) div.appendChild(document.createTextNode(" "));
+      }
+      const fragmentHtml = div.innerHTML || "";
+      try {
+        if (root?.dataset) {
+          root.dataset.copyOfficeFormatSelectionCaptureMode = "fragment";
+          root.dataset.copyOfficeFormatSelectionHtmlLength = String(fragmentHtml.length);
+          root.dataset.copyOfficeFormatSelectionTextLength = String(text.length);
         }
+      } catch (e) {
+        diag("copyOfficeFormatNonFatalError", e);
       }
-      for (let i = ranges.length - 1; i >= 0; i--) {
-        const id = `${Date.now()}-${Math.random().toString(16).slice(2)}-${i}`;
-        const startTok = `COF_START_${id}`;
-        const endTok = `COF_END_${id}`;
-        const startNode = document.createComment(startTok);
-        const endNode = document.createComment(endTok);
-        const rEnd = ranges[i].cloneRange();
-        rEnd.collapse(false);
-        rEnd.insertNode(endNode);
-        const rStart = ranges[i].cloneRange();
-        rStart.collapse(true);
-        rStart.insertNode(startNode);
-        markers.push(startNode, endNode);
-        pairs.push([startTok, endTok]);
-      }
-      const pageHtml = document.documentElement ? document.documentElement.outerHTML : "";
-      for (const n of markers) {
-        try {
-          if (n && n.parentNode) n.parentNode.removeChild(n);
-        } catch (e) {
-          diag("copyOfficeFormatNonFatalError", e);
-        }
-      }
-      if (toastEl && toastParent) {
-        try {
-          if (toastNext && toastNext.parentNode === toastParent) {
-            toastParent.insertBefore(toastEl, toastNext);
-          } else {
-            toastParent.appendChild(toastEl);
-          }
-        } catch (e) {
-          diag("copyOfficeFormatNonFatalError", e);
-        }
-      }
-      return { html: pageHtml, text, pairs };
+
+      if (fragmentHtml && fragmentHtml.length <= maxChars) return { html: fragmentHtml, text };
+      diag("copyOfficeFormatLastCopyError", `selection html too large (${fragmentHtml.length} chars)`);
+      return { html: "", text };
     } catch (e) {
       diag("copyOfficeFormatNonFatalError", e);
       const div = document.createElement("div");
-      for (let i = 0; i < ranges.length; i++) {
-        div.appendChild(ranges[i].cloneContents());
-        if (i + 1 < ranges.length) div.appendChild(document.createTextNode(" "));
+      for (let i = 0; i < sel.rangeCount; i++) {
+        div.appendChild(sel.getRangeAt(i).cloneContents());
+        if (i + 1 < sel.rangeCount) div.appendChild(document.createTextNode(" "));
       }
       return { html: div.innerHTML || "", text };
     }

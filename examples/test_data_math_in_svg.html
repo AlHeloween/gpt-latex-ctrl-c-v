@@ -1,0 +1,46 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Data-math inside SVG (should not break)</title>
+    <meta name="copy-office-format-selector" content="#content" />
+    <style>
+      body {
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        max-width: 900px;
+        margin: 32px auto;
+        padding: 0 16px;
+      }
+      #content {
+        background: #fff;
+        border: 1px solid #ddd;
+        border-radius: 10px;
+        padding: 18px 20px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="content">
+      <h2>Data-math inside SVG (regression probe)</h2>
+      <p>
+        This paragraph contains a normal inline formula that must convert:
+        $x^2 + y^2 = z^2$.
+      </p>
+
+      <p>
+        The block below simulates a site that accidentally places <code>data-math</code> markup
+        inside an SVG subtree. SVG content is intentionally dropped by the Office sanitizer, so
+        this must not crash the pipeline (no "missing placeholder" errors).
+      </p>
+
+      <svg width="10" height="10">
+        <g>
+          <div data-math="\\text{Should not crash even if dropped} = 1+1"></div>
+        </g>
+      </svg>
+
+      <p>End.</p>
+    </div>
+  </body>
+</html>
+

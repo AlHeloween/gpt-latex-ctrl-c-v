@@ -12,7 +12,7 @@ flowchart TB
 
   subgraph CSW["Content-script world"]
     CS["content-script.js"]
-    S["cof-selection.js\n(selection -> pageHtml + anchors)"]
+    S["cof-selection.js\n(selection -> fragmentHtml via Range.cloneContents)"]
     W["cof-wasm.js\n(tex_to_mathml.wasm)"]
     X["cof-xslt.js\n(MathML -> OMML)"]
     C["cof-clipboard.js\n(writeHtml/writeText)"]
@@ -34,7 +34,7 @@ flowchart TB
 
   SEL --> CS
   CS --> S
-  S -->|pageHtml + COF_START/COF_END pairs| W
+  S -->|fragmentHtml| W
   W --> WASM
   CS --> X
   X --> XSL
@@ -70,8 +70,8 @@ sequenceDiagram
 
   BG->>CS: COPY_OFFICE_FORMAT {mode:'html'}
   CS->>S: getSelectionHtmlAndText()
-  S-->>CS: { pageHtml, pairs, text }
-  CS->>W: page_selection_to_office_with_mathml(pageHtml, pairs)
+  S-->>CS: { html: fragmentHtml, text }
+  CS->>W: html_to_office_with_mathml(fragmentHtml)
   W-->>CS: officeHtmlWithMathML
   CS->>X: convert <math> -> OMML (msEquation conditional comments)
   X-->>CS: wrappedHtml
