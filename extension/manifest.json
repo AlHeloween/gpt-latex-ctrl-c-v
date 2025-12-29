@@ -28,5 +28,16 @@
     "wasm/tex_to_mathml.wasm"
   ],
   "icons": { "48": "icons/icon48.png", "96": "icons/icon96.png" },
-  "applications": { "gecko": { "id": "gpt-latex-ctrl-c-v@example" } }
+  "homepage_url": "https://github.com/alheloween/gpt-latex-ctrl-c-v",
+  "support_url": "https://github.com/alheloween/gpt-latex-ctrl-c-v/issues",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "gpt-latex-ctrl-c-v@example",
+      "strict_min_version": "109.0",
+      "data_collection_permissions": {
+        "required": ["none"],
+        "optional": []
+      }
+    }
+  }
 }
