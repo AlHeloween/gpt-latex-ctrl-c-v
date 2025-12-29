@@ -1,326 +1,376 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Extension Debug Helper</title>
     <style>
-        body {
-            font-family: system-ui, sans-serif;
-            max-width: 900px;
-            margin: 40px auto;
-            padding: 20px;
-            background: #f5f5f5;
-        }
-        .test-section {
-            background: white;
-            padding: 20px;
-            margin: 20px 0;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        .test-section h2 {
-            margin-top: 0;
-            color: #333;
-        }
-        button {
-            background: #4CAF50;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 16px;
-            margin: 5px;
-        }
-        button:hover {
-            background: #45a049;
-        }
-        button.secondary {
-            background: #2196F3;
-        }
-        button.secondary:hover {
-            background: #0b7dda;
-        }
-        #log {
-            background: #1e1e1e;
-            color: #d4d4d4;
-            padding: 15px;
-            border-radius: 4px;
-            font-family: 'Courier New', monospace;
-            font-size: 12px;
-            max-height: 400px;
-            overflow-y: auto;
-            white-space: pre-wrap;
-            margin-top: 10px;
-        }
-        .status {
-            padding: 10px;
-            border-radius: 4px;
-            margin: 10px 0;
-        }
-        .status.success {
-            background: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
-        }
-        .status.error {
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
-        }
-        .status.info {
-            background: #d1ecf1;
-            color: #0c5460;
-            border: 1px solid #bee5eb;
-        }
-        .test-content {
-            background: #f8f9fa;
-            padding: 15px;
-            border-left: 4px solid #007bff;
-            margin: 10px 0;
-        }
-        .formula {
-            background: #fff3cd;
-            padding: 2px 6px;
-            border-radius: 3px;
-        }
+      body {
+        font-family: system-ui, sans-serif;
+        max-width: 900px;
+        margin: 40px auto;
+        padding: 20px;
+        background: #f5f5f5;
+      }
+      .test-section {
+        background: white;
+        padding: 20px;
+        margin: 20px 0;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+      .test-section h2 {
+        margin-top: 0;
+        color: #333;
+      }
+      button {
+        background: #4caf50;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 16px;
+        margin: 5px;
+      }
+      button:hover {
+        background: #45a049;
+      }
+      button.secondary {
+        background: #2196f3;
+      }
+      button.secondary:hover {
+        background: #0b7dda;
+      }
+      #log {
+        background: #1e1e1e;
+        color: #d4d4d4;
+        padding: 15px;
+        border-radius: 4px;
+        font-family: "Courier New", monospace;
+        font-size: 12px;
+        max-height: 400px;
+        overflow-y: auto;
+        white-space: pre-wrap;
+        margin-top: 10px;
+      }
+      .status {
+        padding: 10px;
+        border-radius: 4px;
+        margin: 10px 0;
+      }
+      .status.success {
+        background: #d4edda;
+        color: #155724;
+        border: 1px solid #c3e6cb;
+      }
+      .status.error {
+        background: #f8d7da;
+        color: #721c24;
+        border: 1px solid #f5c6cb;
+      }
+      .status.info {
+        background: #d1ecf1;
+        color: #0c5460;
+        border: 1px solid #bee5eb;
+      }
+      .test-content {
+        background: #f8f9fa;
+        padding: 15px;
+        border-left: 4px solid #007bff;
+        margin: 10px 0;
+      }
+      .formula {
+        background: #fff3cd;
+        padding: 2px 6px;
+        border-radius: 3px;
+      }
     </style>
-</head>
-<body>
+  </head>
+  <body>
     <h1>🔧 Extension Debug Helper</h1>
-    <p>Use this page to test and debug the "Copy as Office Format" extension.</p>
+    <p>
+      Use this page to test and debug the "Copy as Office Format" extension.
+    </p>
 
     <div class="test-section">
-        <h2>1. Extension Status Check</h2>
-        <button onclick="checkExtension()">Check Extension Status</button>
-        <div id="extension-status"></div>
+      <h2>1. Extension Status Check</h2>
+      <button onclick="checkExtension()">Check Extension Status</button>
+      <div id="extension-status"></div>
     </div>
 
     <div class="test-section">
-        <h2>2. Test Content Script</h2>
-        <p>Select the text below and right-click → "Copy as Office Format"</p>
-        <div class="test-content" id="test-content">
-            <p>This is a test with inline formula: <span class="formula">$x^2 + y^2 = z^2$</span></p>
-            <p>And a display formula:</p>
-            <p>\[E = mc^2\]</p>
-            <p>Select this text and try copying it!</p>
-        </div>
-        <button onclick="testManualCopy()">Test Manual Copy (Select text first)</button>
+      <h2>2. Test Content Script</h2>
+      <p>Select the text below and right-click → "Copy as Office Format"</p>
+      <div class="test-content" id="test-content">
+        <p>
+          This is a test with inline formula:
+          <span class="formula">$x^2 + y^2 = z^2$</span>
+        </p>
+        <p>And a display formula:</p>
+        <p>\[E = mc^2\]</p>
+        <p>Select this text and try copying it!</p>
+      </div>
+      <button onclick="testManualCopy()">
+        Test Manual Copy (Select text first)
+      </button>
     </div>
 
     <div class="test-section">
-        <h2>3. Direct Function Test</h2>
-        <p>Test the extension functions directly from console:</p>
-        <button onclick="testDirectCopy()">Trigger Copy Programmatically</button>
-        <button class="secondary" onclick="testSelection()">Test Selection Detection</button>
+      <h2>3. Direct Function Test</h2>
+      <p>Test the extension functions directly from console:</p>
+      <button onclick="testDirectCopy()">Trigger Copy Programmatically</button>
+      <button class="secondary" onclick="testSelection()">
+        Test Selection Detection
+      </button>
     </div>
 
     <div class="test-section">
-        <h2>4. Clipboard Verification</h2>
-        <button onclick="checkClipboard()">Check Clipboard Content</button>
-        <div id="clipboard-status"></div>
+      <h2>4. Clipboard Verification</h2>
+      <button onclick="checkClipboard()">Check Clipboard Content</button>
+      <div id="clipboard-status"></div>
     </div>
 
     <div class="test-section">
-        <h2>5. Debug Log</h2>
-        <button class="secondary" onclick="clearLog()">Clear Log</button>
-        <div id="log"></div>
+      <h2>5. Debug Log</h2>
+      <button class="secondary" onclick="clearLog()">Clear Log</button>
+      <div id="log"></div>
     </div>
 
     <script>
-        const log = document.getElementById('log');
-        
-        function addLog(message, type = 'info') {
-            const timestamp = new Date().toLocaleTimeString();
-            const prefix = type === 'error' ? '❌' : type === 'success' ? '✅' : 'ℹ️';
-            log.textContent += `[${timestamp}] ${prefix} ${message}\n`;
-            log.scrollTop = log.scrollHeight;
-            console.log(`[Debug] ${message}`);
+      const log = document.getElementById("log");
+
+      function addLog(message, type = "info") {
+        const timestamp = new Date().toLocaleTimeString();
+        const prefix =
+          type === "error" ? "❌" : type === "success" ? "✅" : "ℹ️";
+        log.textContent += `[${timestamp}] ${prefix} ${message}\n`;
+        log.scrollTop = log.scrollHeight;
+        console.log(`[Debug] ${message}`);
+      }
+
+      function clearLog() {
+        log.textContent = "";
+        addLog("Log cleared");
+      }
+
+      function checkExtension() {
+        const statusDiv = document.getElementById("extension-status");
+        statusDiv.innerHTML = '<div class="status info">Checking...</div>';
+
+        addLog("Checking extension status...");
+
+        // Check if browser API is available
+        if (
+          typeof browser === "undefined" ||
+          typeof browser.runtime === "undefined"
+        ) {
+          statusDiv.innerHTML =
+            '<div class="status error">❌ Extension content script not loaded!<br>Make sure extension is loaded via about:debugging</div>';
+          addLog("Extension API not available", "error");
+          return;
         }
 
-        function clearLog() {
-            log.textContent = '';
-            addLog('Log cleared');
+        addLog("Extension API found", "success");
+
+        // Try to get extension info
+        browser.runtime
+          .sendMessage({ type: "PING" })
+          .then(() => {
+            statusDiv.innerHTML =
+              '<div class="status success">✅ Extension is loaded and active!</div>';
+            addLog("Extension responded to ping", "success");
+          })
+          .catch((err) => {
+            statusDiv.innerHTML =
+              '<div class="status info">⚠️ Extension API available but message failed<br>This is normal if background script is not responding</div>';
+            addLog(
+              "Extension API available but ping failed: " + err.message,
+              "info",
+            );
+          });
+      }
+
+      function testSelection() {
+        addLog("Testing selection detection...");
+        const sel = window.getSelection();
+        if (!sel || sel.rangeCount === 0) {
+          addLog("No selection found", "error");
+          alert("Please select some text first!");
+          return;
         }
 
-        function checkExtension() {
-            const statusDiv = document.getElementById('extension-status');
-            statusDiv.innerHTML = '<div class="status info">Checking...</div>';
-            
-            addLog('Checking extension status...');
-            
-            // Check if browser API is available
-            if (typeof browser === 'undefined' || typeof browser.runtime === 'undefined') {
-                statusDiv.innerHTML = '<div class="status error">❌ Extension content script not loaded!<br>Make sure extension is loaded via about:debugging</div>';
-                addLog('Extension API not available', 'error');
-                return;
-            }
-            
-            addLog('Extension API found', 'success');
-            
-            // Try to get extension info
-            browser.runtime.sendMessage({type: 'PING'}).then(() => {
-                statusDiv.innerHTML = '<div class="status success">✅ Extension is loaded and active!</div>';
-                addLog('Extension responded to ping', 'success');
-            }).catch(err => {
-                statusDiv.innerHTML = '<div class="status info">⚠️ Extension API available but message failed<br>This is normal if background script is not responding</div>';
-                addLog('Extension API available but ping failed: ' + err.message, 'info');
+        const text = sel.toString();
+        const range = sel.getRangeAt(0);
+        const html = range.cloneContents();
+        const div = document.createElement("div");
+        div.appendChild(html);
+
+        addLog(
+          `Selection text: "${text.substring(0, 50)}${text.length > 50 ? "..." : ""}"`,
+          "success",
+        );
+        addLog(`Selection HTML length: ${div.innerHTML.length}`, "success");
+        addLog(
+          `Selection contains $: ${text.includes("$")}`,
+          text.includes("$") ? "success" : "info",
+        );
+      }
+
+      function testManualCopy() {
+        addLog("Testing manual copy...");
+        const sel = window.getSelection();
+        if (!sel || sel.rangeCount === 0) {
+          addLog("No selection found", "error");
+          alert("Please select some text first!");
+          return;
+        }
+
+        addLog("Selection found, triggering copy...");
+
+        // Try to trigger the extension
+        if (typeof browser !== "undefined" && browser.runtime) {
+          browser.runtime
+            .sendMessage({ type: "COPY_OFFICE_FORMAT" })
+            .then(() => {
+              addLog("Message sent successfully", "success");
+              setTimeout(() => checkClipboard(), 2000);
+            })
+            .catch((err) => {
+              addLog("Failed to send message: " + err.message, "error");
             });
+        } else {
+          addLog("Extension API not available", "error");
         }
+      }
 
-        function testSelection() {
-            addLog('Testing selection detection...');
-            const sel = window.getSelection();
-            if (!sel || sel.rangeCount === 0) {
-                addLog('No selection found', 'error');
-                alert('Please select some text first!');
-                return;
+      function testDirectCopy() {
+        addLog("Testing direct copy function...");
+
+        // Select the test content
+        const testContent = document.getElementById("test-content");
+        const range = document.createRange();
+        range.selectNodeContents(testContent);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+
+        addLog("Text selected automatically");
+
+        // Wait a moment then trigger copy
+        setTimeout(() => {
+          if (typeof browser !== "undefined" && browser.runtime) {
+            browser.runtime
+              .sendMessage({ type: "COPY_OFFICE_FORMAT" })
+              .then(() => {
+                addLog("Copy message sent", "success");
+                setTimeout(() => checkClipboard(), 2000);
+              })
+              .catch((err) => {
+                addLog("Failed to send message: " + err.message, "error");
+              });
+          } else {
+            addLog("Extension API not available", "error");
+          }
+        }, 100);
+      }
+
+      async function checkClipboard() {
+        const statusDiv = document.getElementById("clipboard-status");
+        statusDiv.innerHTML =
+          '<div class="status info">Checking clipboard...</div>';
+        addLog("Checking clipboard content...");
+
+        try {
+          if (!navigator.clipboard || !navigator.clipboard.read) {
+            statusDiv.innerHTML =
+              '<div class="status error">❌ Clipboard API not available</div>';
+            addLog("Clipboard API not available", "error");
+            return;
+          }
+
+          const items = await navigator.clipboard.read();
+          const result = {};
+
+          for (const item of items) {
+            for (const type of item.types) {
+              const blob = await item.getType(type);
+              result[type] = await blob.text();
             }
-            
-            const text = sel.toString();
-            const range = sel.getRangeAt(0);
-            const html = range.cloneContents();
-            const div = document.createElement('div');
-            div.appendChild(html);
-            
-            addLog(`Selection text: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`, 'success');
-            addLog(`Selection HTML length: ${div.innerHTML.length}`, 'success');
-            addLog(`Selection contains $: ${text.includes('$')}`, text.includes('$') ? 'success' : 'info');
+          }
+
+          let statusHtml =
+            '<div class="status success">✅ Clipboard contains:</div><ul>';
+          for (const [type, content] of Object.entries(result)) {
+            const preview =
+              content.substring(0, 100) + (content.length > 100 ? "..." : "");
+            statusHtml += `<li><strong>${type}:</strong> ${preview.length} chars<br><code style="font-size:10px;">${preview.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</code></li>`;
+            addLog(`Clipboard ${type}: ${content.length} chars`, "success");
+
+            // Check for OMML
+            if (type === "text/html" && content.includes("xmlns:m=")) {
+              addLog("Clipboard HTML contains OMML namespace!", "success");
+            }
+
+            // Check for raw LaTeX (should not be present)
+            if (content.match(/\$[^$]+\$/) || content.includes("\\[")) {
+              addLog(
+                "⚠️ Warning: Clipboard contains raw LaTeX (may not be converted)",
+                "error",
+              );
+            }
+          }
+          statusHtml += "</ul>";
+          statusDiv.innerHTML = statusHtml;
+        } catch (err) {
+          statusDiv.innerHTML = `<div class="status error">❌ Clipboard read error: ${err.name}<br>${err.message}</div>`;
+          addLog(`Clipboard read error: ${err.name} - ${err.message}`, "error");
         }
+      }
 
-        function testManualCopy() {
-            addLog('Testing manual copy...');
-            const sel = window.getSelection();
-            if (!sel || sel.rangeCount === 0) {
-                addLog('No selection found', 'error');
-                alert('Please select some text first!');
-                return;
-            }
-            
-            addLog('Selection found, triggering copy...');
-            
-            // Try to trigger the extension
-            if (typeof browser !== 'undefined' && browser.runtime) {
-                browser.runtime.sendMessage({type: 'COPY_OFFICE_FORMAT'}).then(() => {
-                    addLog('Message sent successfully', 'success');
-                    setTimeout(() => checkClipboard(), 2000);
-                }).catch(err => {
-                    addLog('Failed to send message: ' + err.message, 'error');
-                });
-            } else {
-                addLog('Extension API not available', 'error');
-            }
+      // Listen for console messages from extension
+      const originalLog = console.log;
+      const originalInfo = console.info;
+      const originalError = console.error;
+
+      console.log = function (...args) {
+        originalLog.apply(console, args);
+        if (
+          args[0] &&
+          typeof args[0] === "string" &&
+          args[0].includes("Copy as Office Format")
+        ) {
+          addLog(args.join(" "), "info");
         }
+      };
 
-        function testDirectCopy() {
-            addLog('Testing direct copy function...');
-            
-            // Select the test content
-            const testContent = document.getElementById('test-content');
-            const range = document.createRange();
-            range.selectNodeContents(testContent);
-            const sel = window.getSelection();
-            sel.removeAllRanges();
-            sel.addRange(range);
-            
-            addLog('Text selected automatically');
-            
-            // Wait a moment then trigger copy
-            setTimeout(() => {
-                if (typeof browser !== 'undefined' && browser.runtime) {
-                    browser.runtime.sendMessage({type: 'COPY_OFFICE_FORMAT'}).then(() => {
-                        addLog('Copy message sent', 'success');
-                        setTimeout(() => checkClipboard(), 2000);
-                    }).catch(err => {
-                        addLog('Failed to send message: ' + err.message, 'error');
-                    });
-                } else {
-                    addLog('Extension API not available', 'error');
-                }
-            }, 100);
+      console.info = function (...args) {
+        originalInfo.apply(console, args);
+        if (
+          args[0] &&
+          typeof args[0] === "string" &&
+          args[0].includes("Copy as Office Format")
+        ) {
+          addLog(args.join(" "), "success");
         }
+      };
 
-        async function checkClipboard() {
-            const statusDiv = document.getElementById('clipboard-status');
-            statusDiv.innerHTML = '<div class="status info">Checking clipboard...</div>';
-            addLog('Checking clipboard content...');
-            
-            try {
-                if (!navigator.clipboard || !navigator.clipboard.read) {
-                    statusDiv.innerHTML = '<div class="status error">❌ Clipboard API not available</div>';
-                    addLog('Clipboard API not available', 'error');
-                    return;
-                }
-                
-                const items = await navigator.clipboard.read();
-                const result = {};
-                
-                for (const item of items) {
-                    for (const type of item.types) {
-                        const blob = await item.getType(type);
-                        result[type] = await blob.text();
-                    }
-                }
-                
-                let statusHtml = '<div class="status success">✅ Clipboard contains:</div><ul>';
-                for (const [type, content] of Object.entries(result)) {
-                    const preview = content.substring(0, 100) + (content.length > 100 ? '...' : '');
-                    statusHtml += `<li><strong>${type}:</strong> ${preview.length} chars<br><code style="font-size:10px;">${preview.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code></li>`;
-                    addLog(`Clipboard ${type}: ${content.length} chars`, 'success');
-                    
-                    // Check for OMML
-                    if (type === 'text/html' && content.includes('xmlns:m=')) {
-                        addLog('Clipboard HTML contains OMML namespace!', 'success');
-                    }
-                    
-                    // Check for raw LaTeX (should not be present)
-                    if (content.match(/\$[^$]+\$/) || content.includes('\\[')) {
-                        addLog('⚠️ Warning: Clipboard contains raw LaTeX (may not be converted)', 'error');
-                    }
-                }
-                statusHtml += '</ul>';
-                statusDiv.innerHTML = statusHtml;
-                
-            } catch (err) {
-                statusDiv.innerHTML = `<div class="status error">❌ Clipboard read error: ${err.name}<br>${err.message}</div>`;
-                addLog(`Clipboard read error: ${err.name} - ${err.message}`, 'error');
-            }
+      console.error = function (...args) {
+        originalError.apply(console, args);
+        if (
+          args[0] &&
+          typeof args[0] === "string" &&
+          args[0].includes("Copy as Office Format")
+        ) {
+          addLog(args.join(" "), "error");
         }
+      };
 
-        // Listen for console messages from extension
-        const originalLog = console.log;
-        const originalInfo = console.info;
-        const originalError = console.error;
-        
-        console.log = function(...args) {
-            originalLog.apply(console, args);
-            if (args[0] && typeof args[0] === 'string' && args[0].includes('Copy as Office Format')) {
-                addLog(args.join(' '), 'info');
-            }
-        };
-        
-        console.info = function(...args) {
-            originalInfo.apply(console, args);
-            if (args[0] && typeof args[0] === 'string' && args[0].includes('Copy as Office Format')) {
-                addLog(args.join(' '), 'success');
-            }
-        };
-        
-        console.error = function(...args) {
-            originalError.apply(console, args);
-            if (args[0] && typeof args[0] === 'string' && args[0].includes('Copy as Office Format')) {
-                addLog(args.join(' '), 'error');
-            }
-        };
-
-        // Auto-check extension on load
-        window.addEventListener('load', () => {
-            addLog('Debug page loaded');
-            setTimeout(() => checkExtension(), 500);
-        });
+      // Auto-check extension on load
+      window.addEventListener("load", () => {
+        addLog("Debug page loaded");
+        setTimeout(() => checkExtension(), 500);
+      });
     </script>
-    
-</body>
+  </body>
 </html>
-

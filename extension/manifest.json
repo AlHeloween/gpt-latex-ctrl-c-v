@@ -8,7 +8,17 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["constants.js", "content-script.js"],
+      "js": [
+        "constants.js",
+        "lib/cof-diag.js",
+        "lib/cof-core.js",
+        "lib/cof-wasm.js",
+        "lib/cof-selection.js",
+        "lib/cof-xslt.js",
+        "lib/cof-clipboard.js",
+        "lib/cof-ui.js",
+        "content-script.js"
+      ],
       "run_at": "document_idle",
       "all_frames": true
     }

@@ -8,8 +8,8 @@ Policy (deterministic):
 - Delete everything else under `test_results/` (directories and files).
 
 Usage:
-  uv run python tools/cleanup_test_results.py
-  uv run python tools/cleanup_test_results.py --dry-run
+  uv run python lib/tools/cleanup_test_results.py
+  uv run python lib/tools/cleanup_test_results.py --dry-run
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ import shutil
 from pathlib import Path
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 TEST_RESULTS = PROJECT_ROOT / "test_results"
 
 
@@ -112,4 +112,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -28,7 +28,7 @@ import threading
 
 from playwright.async_api import async_playwright
 
-from tools.build_chromium_extension import build as build_chromium_extension  # type: ignore
+from lib.tools.build_chromium_extension import build as build_chromium_extension  # type: ignore
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -110,12 +110,12 @@ def _discover_examples(examples_dir: Path) -> list[ExampleCase]:
 
 
 def _build_docx_tool() -> Path:
-    manifest = PROJECT_ROOT / "rust" / "docx_from_html" / "Cargo.toml"
-    out_dir = PROJECT_ROOT / "rust" / "docx_from_html" / "target" / "release"
+    manifest = PROJECT_ROOT / "lib" / "rust" / "docx_from_html" / "Cargo.toml"
+    out_dir = PROJECT_ROOT / "lib" / "rust" / "docx_from_html" / "target" / "release"
     exe = out_dir / ("docx_from_html.exe" if os.name == "nt" else "docx_from_html")
 
     def newest_source_mtime() -> float:
-        src_dir = PROJECT_ROOT / "rust" / "docx_from_html" / "src"
+        src_dir = PROJECT_ROOT / "lib" / "rust" / "docx_from_html" / "src"
         mtimes = [manifest.stat().st_mtime]
         for p in src_dir.rglob("*.rs"):
             try:
@@ -151,6 +151,36 @@ def _read_docx_document_xml(docx_path: Path) -> str:
         return z.read("word/document.xml").decode("utf-8", errors="replace")
 
 
+def _read_docx_document_rels(docx_path: Path) -> str:
+    with zipfile.ZipFile(docx_path, "r") as z:
+        return z.read("word/_rels/document.xml.rels").decode("utf-8", errors="replace")
+
+async def _chromium_send_to_active_tab(service_worker, message: dict) -> dict | None:
+    return await service_worker.evaluate(
+        """
+        async ({ message }) => {
+            const chrome = globalThis.chrome;
+            if (!chrome?.tabs) throw new Error("chrome.tabs unavailable");
+            function call(fn, ...args) {
+                return new Promise((resolve, reject) => {
+                    fn(...args, (result) => {
+                        const err = chrome.runtime?.lastError;
+                        if (err) reject(new Error(err.message || String(err)));
+                        else resolve(result);
+                    });
+                });
+            }
+            const tabs = await call(chrome.tabs.query, { active: true, currentWindow: true });
+            const tabId = tabs && tabs[0] ? tabs[0].id : null;
+            if (!tabId) throw new Error("no active tab");
+            const resp = await call(chrome.tabs.sendMessage, tabId, message);
+            return resp || null;
+        }
+        """,
+        {"message": message},
+    )
+
+
 def _assert_docx_matches_payload(*, payload_json: Path, docx_path: Path) -> dict[str, bool]:
     payload = json.loads(payload_json.read_text(encoding="utf-8"))
     last = payload.get("lastClipboard") or {}
@@ -158,17 +188,30 @@ def _assert_docx_matches_payload(*, payload_json: Path, docx_path: Path) -> dict
     plain = last.get("plainText") or ""
 
     xml = _read_docx_document_xml(docx_path)
+    rels = _read_docx_document_rels(docx_path)
 
     wl = wrapped.lower()
     has_omml_expected = ("<m:omath" in wl) or ("<m:omathpara" in wl)
     has_omml_actual = ("<m:oMath" in xml) or ("<m:oMathPara" in xml)
 
-    # Text sanity: pick a stable token from the plain text (first long-ish word).
-    word = ""
-    for tok in re.split(r"\s+", plain):
-        if len(tok) >= 6:
-            word = tok
-            break
+    # Text sanity: pick a stable *visible* token from plain text.
+    # Some examples (e.g. "DOM Source of Selection") may have HTML-ish plain text;
+    # strip tags/attributes and avoid choosing tokens like `_ngcontent-...=""`.
+    def pick_visible_token(text: str) -> str:
+        s = str(text or "")
+        s = re.sub(r"<[^>]+>", " ", s)  # drop tags
+        s = re.sub(r"&[A-Za-z0-9#]+;", " ", s)  # drop entities (good enough for token picking)
+        for tok in re.split(r"\s+", s):
+            t = tok.strip("()[]{}<>.,;:!?'\"")
+            if len(t) < 6:
+                continue
+            if any(ch in t for ch in ['<', '>', '=', '"', "'"]):
+                continue
+            if re.search(r"[A-Za-z]", t):
+                return t
+        return ""
+
+    word = pick_visible_token(plain)
 
     markers = {
         "docx_has_omml": has_omml_actual,
@@ -176,6 +219,9 @@ def _assert_docx_matches_payload(*, payload_json: Path, docx_path: Path) -> dict
         "docx_has_parse_error": "[PARSE ERROR" in xml,
         "docx_contains_tex_annotation": ("application/x-tex" in xml) or ("<annotation" in xml.lower()),
         "docx_contains_plain_token": (word in xml) if word else True,
+        "payload_has_links": ("<a" in wl) and ("href=" in wl),
+        "docx_has_hyperlinks": "<w:hyperlink" in xml,
+        "docx_rels_has_hyperlinks": "relationships/hyperlink" in rels,
     }
 
     if markers["docx_has_parse_error"]:
@@ -186,6 +232,12 @@ def _assert_docx_matches_payload(*, payload_json: Path, docx_path: Path) -> dict
         raise AssertionError("payload had OMML but docx lacks OMML elements")
     if not markers["docx_contains_plain_token"]:
         raise AssertionError(f"docx missing expected plain-text token: {word!r}")
+
+    if markers["payload_has_links"]:
+        if not markers["docx_has_hyperlinks"]:
+            raise AssertionError("payload had <a href=...> links but docx lacks <w:hyperlink>")
+        if not markers["docx_rels_has_hyperlinks"]:
+            raise AssertionError("payload had <a href=...> links but docx rels lacks hyperlink relationships")
 
     # Guardrail: sqrt must not render as an n-root with an empty degree placeholder in Word.
     # If the source payload contained a square-root (msqrt), require degHide in OMML output.
@@ -206,6 +258,12 @@ async def main() -> int:
         help="Include very large HTML files (default skips > 1MB unless a *_static.html exists).",
     )
     args = parser.parse_args()
+
+    if os.name != "nt":
+        print("SKIP: generating docx via real clipboard is Windows-only.")
+        return 0
+
+    from lib.tools.win_clipboard_dump import dump_clipboard  # type: ignore
 
     examples_dir = Path(args.examples_dir)
     if not examples_dir.exists():
@@ -255,21 +313,28 @@ async def main() -> int:
             headless=False,
             args=[
                 f"--disable-extensions-except={chromium_dir}",
-                f"--load-extension={chromium_dir}",
-                "--no-first-run",
-                "--no-default-browser-check",
-                "--disable-popup-blocking",
-                "--disable-background-networking",
-                "--disable-default-apps",
-                "--disable-sync",
-                "--disable-translate",
-                # Keep the window off-screen so it doesn't disrupt the user.
-                "--window-position=-32000,-32000",
-                "--window-size=800,600",
-                "--start-minimized",
-            ],
-        )
+                    f"--load-extension={chromium_dir}",
+                    "--no-first-run",
+                    "--no-default-browser-check",
+                    "--disable-popup-blocking",
+                    "--disable-background-networking",
+                    "--disable-default-apps",
+                    "--disable-sync",
+                    "--disable-translate",
+                    # Keep the window off-screen so it doesn't disrupt the user.
+                    "--window-position=-32000,-32000",
+                    "--window-size=800,600",
+                    "--start-minimized",
+                ],
+            )
         try:
+            service_worker = None
+            sws = getattr(context, "service_workers", None)
+            if sws:
+                service_worker = sws[0] if sws else None
+            if not service_worker:
+                service_worker = await context.wait_for_event("serviceworker")
+
             page = context.pages[0] if context.pages else await context.new_page()
 
             async def dom_prove_ready() -> None:
@@ -306,45 +371,47 @@ async def main() -> int:
                     timeout=15_000,
                 )
 
-            async def trigger_copy(selector: str | None, timeout_ms: int) -> None:
-                await page.evaluate(
+            async def select_selector(selector: str) -> str:
+                return await page.evaluate(
                     """
-                    ({ selector, timeoutMs }) => new Promise((resolve, reject) => {
-                        const requestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-                        const timeout = setTimeout(
-                          () => reject(new Error("Timed out waiting for __copyOfficeFormatTestResult")),
-                          timeoutMs || 10000
-                        );
-                        function onResult(e) {
-                            const d = e?.detail;
-                            if (!d || d.requestId !== requestId) return;
-                            window.removeEventListener("__copyOfficeFormatTestResult", onResult);
-                            clearTimeout(timeout);
-                            if (d.ok) resolve(true);
-                            else reject(new Error(d.error || "Copy failed"));
-                        }
-                        window.addEventListener("__copyOfficeFormatTestResult", onResult);
-                        window.dispatchEvent(new CustomEvent("__copyOfficeFormatTestRequest", { detail: { requestId, selector } }));
-                    })
+                    ({ selector }) => {
+                        const el = document.querySelector(selector);
+                        if (!el) return "";
+                        const r = document.createRange();
+                        r.selectNodeContents(el);
+                        const sel = window.getSelection();
+                        sel.removeAllRanges();
+                        sel.addRange(r);
+                        return sel.toString() || "";
+                    }
                     """,
-                    {"selector": selector, "timeoutMs": timeout_ms},
+                    {"selector": selector},
                 )
 
-            async def read_payload() -> dict:
-                raw = await page.evaluate(
-                    """
-                    () => {
-                        const el = document.getElementById("__copyOfficeFormatTestBridge");
-                        return el ? el.value : null;
-                    }
-                    """
-                )
-                if not raw:
-                    raise RuntimeError("Test bridge textarea missing or empty")
-                data = json.loads(raw)
-                if "lastClipboard" not in data:
-                    raise RuntimeError("Bridge JSON missing lastClipboard")
-                return data
+            async def ensure_selection(selector: str) -> tuple[str, str]:
+                tried: list[str] = []
+                for sel in [selector, *_PREFERRED_SELECTORS, "body"]:
+                    if not sel or sel in tried:
+                        continue
+                    tried.append(sel)
+                    txt = await select_selector(sel)
+                    if str(txt or "").strip():
+                        return sel, txt
+                return selector, ""
+
+            def wait_clipboard_has(token: str, before_sha: str, timeout_s: float = 15.0, poll_s: float = 0.2) -> dict:
+                t0 = time.monotonic()
+                last: dict | None = None
+                while True:
+                    d = dump_clipboard()
+                    last = d
+                    sha = d.get("cfhtml_bytes_sha256") or ""
+                    txt = d.get("plain_text") or ""
+                    if sha and sha != before_sha and token and token in txt:
+                        return d
+                    if time.monotonic() - t0 >= timeout_s:
+                        return last or {}
+                    time.sleep(poll_s)
 
             for case in cases:
                 print(f"[case] {case.name}")
@@ -355,8 +422,33 @@ async def main() -> int:
                     await page.goto(url, wait_until="domcontentloaded")
                     await dom_prove_ready()
                     await wait_extension_marker()
-                    await trigger_copy(case.selector, timeout_ms=60_000)
-                    payload = await read_payload()
+                    selector_used, selected_text = await ensure_selection(case.selector)
+                    if not str(selected_text or "").strip():
+                        raise AssertionError(f"Could not select any text (selector={case.selector!r})")
+                    token = (selected_text.strip().splitlines() or [""])[0][:64]
+                    before_sha = dump_clipboard().get("cfhtml_bytes_sha256") or ""
+
+                    resp = await _chromium_send_to_active_tab(
+                        service_worker,
+                        {"type": "COPY_OFFICE_FORMAT", "mode": "html"},
+                    )
+                    if not resp or not resp.get("ok", False):
+                        err = resp.get("error") if isinstance(resp, dict) else None
+                        last_err = await page.evaluate(
+                            "() => document.documentElement?.dataset?.copyOfficeFormatLastCopyError || ''"
+                        )
+                        raise AssertionError(f"COPY_OFFICE_FORMAT failed: {err or last_err or 'unknown error'}")
+
+                    clip = wait_clipboard_has(token=token, before_sha=before_sha)
+                    fragment = clip.get("fragment") or ""
+                    payload = {
+                        "lastClipboard": {
+                            "wrappedHtml": fragment,
+                            "plainText": clip.get("plain_text") or "",
+                            "cfhtml": clip.get("cfhtml") or "",
+                            "sourceUrl": clip.get("source_url") or "",
+                        }
+                    }
 
                     payload_json = tmp / "extension_payload.json"
                     payload_json.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")

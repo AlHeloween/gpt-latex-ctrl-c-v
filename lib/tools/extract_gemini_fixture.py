@@ -10,8 +10,8 @@ Rule alignment:
 - Produces an inspectable artifact (static HTML) that can be selected deterministically.
 
 Usage:
-  uv run python tools/extract_gemini_fixture.py --in <FULL_SAVED_PAGE>.html --out examples/selection_example_static.html
-  uv run python tools/capture_extension_payload.py --path examples/selection_example_static.html --selector "#extended-response-markdown-content" --out artifacts/gemini_payload.json
+  uv run python lib/tools/extract_gemini_fixture.py --in <FULL_SAVED_PAGE>.html --out examples/selection_example_static.html
+  uv run python lib/tools/capture_extension_payload.py --path examples/selection_example_static.html --selector "#extended-response-markdown-content" --out artifacts/gemini_payload.json
 """
 
 from __future__ import annotations

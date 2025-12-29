@@ -5,9 +5,11 @@
 ### Issue: Context Menu Doesn't Appear
 
 **Symptoms:**
+
 - Right-clicking on selected text doesn't show "Copy as Office Format" option
 
 **Solutions:**
+
 1. Verify extension is loaded:
    - Go to `about:debugging`
    - Click "This Firefox"
@@ -27,16 +29,19 @@
 ### Issue: Context Menu Appears But Nothing Happens
 
 **Symptoms:**
+
 - Context menu shows "Copy as Office Format"
 - Clicking it does nothing
 - No visual feedback
 
 **Solutions:**
+
 1. Open Browser Console (Ctrl+Shift+J)
 2. Look for console messages starting with `[Copy as Office Format]`
 3. Check for errors in red
 
 **Expected Console Output:**
+
 ```
 [Copy as Office Format] Message received: {type: "COPY_OFFICE_FORMAT"}
 [Copy as Office Format] handleCopy called
@@ -46,6 +51,7 @@
 ```
 
 **If you see errors:**
+
 - "Cannot send message" → Content script not loaded on this page
 - "No text selected" → Selection was lost
 - TeX conversion errors → WASM conversion failed (see console for details)
@@ -53,9 +59,11 @@
 ### Issue: Clipboard Operation Fails
 
 **Symptoms:**
+
 - Console shows "Copy failed" or clipboard errors
 
 **Solutions:**
+
 1. Check clipboard permissions:
    - Extension has `clipboardWrite` permission in manifest
    - Page must be active (not in background tab)
@@ -69,9 +77,11 @@
 ### Issue: Formulas Not Converting
 
 **Symptoms:**
+
 - Text copies but LaTeX formulas remain as raw text (e.g., `$x^2$`)
 
 **Solutions:**
+
 1. Check WASM bundle:
    - Ensure `extension/wasm/tex_to_mathml.wasm` exists and is up to date
 
@@ -88,6 +98,7 @@
 **Note:** Firefox extensions work on `file://` URLs with `<all_urls>` in manifest.
 
 **If content script doesn't load on file:// URLs:**
+
 1. Check manifest has `"matches": ["<all_urls>"]`
 2. Reload extension after changing manifest
 3. Reload the test page
@@ -95,11 +106,13 @@
 ## Quick Diagnostic Steps
 
 1. **Check Extension Status:**
+
    ```
    about:debugging → This Firefox → Find extension
    ```
 
 2. **Check Console:**
+
    ```
    Press F12 → Console tab
    Look for [Copy as Office Format] messages
@@ -128,8 +141,8 @@
 ## Getting Help
 
 If issues persist, provide:
+
 - Browser console output (all messages)
 - Extension ID from `about:debugging`
 - Steps to reproduce
 - Any error messages
-

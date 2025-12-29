@@ -1,50 +1,59 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Cross-Frame Selection Test</title>
     <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            max-width: 800px;
-            margin: 40px auto;
-            padding: 20px;
-            background: #f5f5f5;
-        }
-        #main-content {
-            background: #ffffff;
-            padding: 20px;
-            border-radius: 8px;
-            border-left: 4px solid #17a2b8;
-            line-height: 1.6;
-            margin: 20px 0;
-        }
-        iframe {
-            width: 100%;
-            height: 300px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-        }
-        p {
-            margin: 8px 0;
-        }
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        max-width: 800px;
+        margin: 40px auto;
+        padding: 20px;
+        background: #f5f5f5;
+      }
+      #main-content {
+        background: #ffffff;
+        padding: 20px;
+        border-radius: 8px;
+        border-left: 4px solid #17a2b8;
+        line-height: 1.6;
+        margin: 20px 0;
+      }
+      iframe {
+        width: 100%;
+        height: 300px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+      }
+      p {
+        margin: 8px 0;
+      }
     </style>
-</head>
-<body>
+  </head>
+  <body>
     <h1>Cross-Frame Selection Test</h1>
-    <p><strong>Purpose:</strong> Test handling of selections that span multiple frames (iframes).</p>
-    <p><strong>Note:</strong> Cross-frame selections are detected but may not be fully supported.</p>
-    
-    <hr style="margin: 30px 0;">
-    
+    <p>
+      <strong>Purpose:</strong> Test handling of selections that span multiple
+      frames (iframes).
+    </p>
+    <p>
+      <strong>Note:</strong> Cross-frame selections are detected but may not be
+      fully supported.
+    </p>
+
+    <hr style="margin: 30px 0" />
+
     <div id="main-content">
-        <p>Main frame content with formula: $x^2 + y^2 = z^2$</p>
-        <p>Another formula: $\int_0^{\pi} \sin(x) dx = 2$</p>
+      <p>Main frame content with formula: $x^2 + y^2 = z^2$</p>
+      <p>Another formula: $\int_0^{\pi} \sin(x) dx = 2$</p>
     </div>
-    
+
     <h2>Iframe Content</h2>
-    <iframe id="test-iframe" srcdoc="
+    <iframe
+      id="test-iframe"
+      srcdoc="
         <!DOCTYPE html>
         <html>
         <head>
@@ -59,11 +68,13 @@
             <p>Another formula: $\sum_{n=1}^{\infty} \frac{1}{n^2} = \frac{\pi^2}{6}$</p>
         </body>
         </html>
-    "></iframe>
-    
-    <hr style="margin: 30px 0;">
-    <p style="color: #666; font-size: 0.9em;"><strong>Expected:</strong> Selections within a single frame should work. Cross-frame selections may show a warning.</p>
-    
-</body>
-</html>
+    "
+    ></iframe>
 
+    <hr style="margin: 30px 0" />
+    <p style="color: #666; font-size: 0.9em">
+      <strong>Expected:</strong> Selections within a single frame should work.
+      Cross-frame selections may show a warning.
+    </p>
+  </body>
+</html>

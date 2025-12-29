@@ -12,6 +12,7 @@ Windows-only.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import time
@@ -21,6 +22,7 @@ from typing import Any
 import ctypes
 from ctypes import wintypes
 
+from lib.tools.cf_html import parse_offsets_from_bytes, validate_cf_html_bytes  # type: ignore
 
 GMEM_MOVEABLE = 0x0002
 CF_UNICODETEXT = 13
@@ -76,33 +78,81 @@ def _format_name(fmt: int) -> str:
     return f"FORMAT_{fmt}"
 
 
-def _parse_cf_html(text: str) -> dict[str, Any]:
+def _parse_cf_html_bytes(raw: bytes) -> dict[str, Any]:
     """
-    Parse CF_HTML and return {header, html, fragment, source_url}.
+    Parse CF_HTML bytes and return {header, html, fragment, source_url}.
 
-    If parsing fails, returns best-effort fields.
+    - Uses StartHTML/EndHTML when present (for header slicing).
+    - Extracts fragment between the first StartFragment marker and the first EndFragment marker after it.
+    - If parsing fails, returns best-effort fields.
     """
     out: dict[str, Any] = {"header": "", "html": "", "fragment": "", "source_url": ""}
-    if not text:
+    if not raw:
         return out
 
-    # SourceURL is optional.
-    for line in text.splitlines():
-        if line.startswith("SourceURL:"):
-            out["source_url"] = line[len("SourceURL:") :].strip()
-            break
+    raw = raw.split(b"\x00", 1)[0]
+    offsets = parse_offsets_from_bytes(raw).offsets
+    start_html = offsets.get("StartHTML")
+    end_html = offsets.get("EndHTML")
+    start_frag = offsets.get("StartFragment")
+    end_frag = offsets.get("EndFragment")
 
-    start_marker = "<!--StartFragment-->"
-    end_marker = "<!--EndFragment-->"
-    start_i = text.find(start_marker)
-    end_i = text.find(end_marker)
-    if start_i != -1 and end_i != -1 and end_i > start_i:
-        out["header"] = text[:start_i]
-        out["html"] = text[start_i : end_i + len(end_marker)]
-        out["fragment"] = text[start_i + len(start_marker) : end_i]
+    header_bytes = b""
+    html_bytes = raw
+    if start_html is not None and end_html is not None and 0 <= start_html <= end_html <= len(raw):
+        header_bytes = raw[:start_html]
+        html_bytes = raw[start_html:end_html]
+
+    try:
+        header_text = header_bytes.decode("ascii", errors="ignore")
+        for line in header_text.splitlines():
+            if line.startswith("SourceURL:"):
+                out["source_url"] = line[len("SourceURL:") :].strip()
+                break
+    except Exception:
+        pass
+
+    # Prefer offsets for fragment extraction (marker-free producers exist).
+    if (
+        start_frag is not None
+        and end_frag is not None
+        and 0 <= start_frag <= end_frag <= len(raw)
+        and (start_html is None or start_frag >= start_html)
+        and (end_html is None or end_frag <= end_html)
+    ):
+        frag_bytes = raw[start_frag:end_frag]
+        # If offsets include comment markers, strip a single layer (best-effort).
+        low = frag_bytes.lower()
+        if low.startswith(b"<!--startfragment"):
+            j = low.find(b"-->")
+            if j >= 0:
+                frag_bytes = frag_bytes[j + 3 :]
+        low = frag_bytes.lower()
+        if low.endswith(b"-->") and b"<!--endfragment" in low[-80:]:
+            k = low.rfind(b"<!--endfragment")
+            if k >= 0:
+                frag_bytes = frag_bytes[:k]
+        out["header"] = header_bytes.decode("utf-8", errors="replace") if header_bytes else ""
+        out["html"] = html_bytes.decode("utf-8", errors="replace")
+        out["fragment"] = frag_bytes.decode("utf-8", errors="replace")
         return out
 
-    out["html"] = text
+    # Fallback: marker-based extraction within the HTML payload (best-effort).
+    lower = html_bytes.lower()
+    start_pos = lower.find(b"<!--startfragment")
+    if start_pos >= 0:
+        start_end = lower.find(b"-->", start_pos)
+        if start_end >= 0:
+            end_pos = lower.find(b"<!--endfragment", start_end + 3)
+            if end_pos >= 0:
+                out["header"] = header_bytes.decode("utf-8", errors="replace") if header_bytes else ""
+                out["html"] = html_bytes.decode("utf-8", errors="replace")
+                out["fragment"] = html_bytes[start_end + 3 : end_pos].decode("utf-8", errors="replace")
+                return out
+
+    # Best-effort fallback.
+    out["html"] = html_bytes.decode("utf-8", errors="replace")
+    out["header"] = header_bytes.decode("utf-8", errors="replace") if header_bytes else ""
     return out
 
 
@@ -135,16 +185,27 @@ def dump_clipboard() -> dict[str, Any]:
         raw_text = _read_clipboard_bytes(CF_UNICODETEXT)
 
         html_text = ""
+        html_bytes = b""
         if raw_html is not None:
             # CF_HTML is typically UTF-8 with a trailing NUL.
-            html_text = raw_html.split(b"\x00", 1)[0].decode("utf-8", errors="replace")
+            html_bytes = raw_html.split(b"\x00", 1)[0]
+            html_text = html_bytes.decode("utf-8", errors="replace")
 
         plain_text = ""
         if raw_text is not None:
-            # UTF-16LE with a trailing NUL.
-            plain_text = raw_text.split(b"\x00\x00", 1)[0].decode("utf-16le", errors="replace")
+            # UTF-16LE with a trailing NUL (terminated on a 2-byte boundary).
+            b = raw_text
+            end = None
+            for i in range(0, max(0, len(b) - 1), 2):
+                if b[i] == 0 and b[i + 1] == 0:
+                    end = i
+                    break
+            if end is None:
+                end = len(b) - (len(b) % 2)
+            plain_text = b[:end].decode("utf-16le", errors="replace")
 
-        parsed = _parse_cf_html(html_text)
+        parsed = _parse_cf_html_bytes(html_bytes)
+        validation = validate_cf_html_bytes(html_bytes) if html_bytes else {"ok": False, "errors": ["no HTML Format bytes"]}
 
         return {
             "formats": [{"id": int(f), "name": _format_name(int(f))} for f in formats],
@@ -153,6 +214,8 @@ def dump_clipboard() -> dict[str, Any]:
             "open_clipboard_last_winerr": int(last_err),
             "has_html_format": raw_html is not None,
             "has_unicode_text": raw_text is not None,
+            "cfhtml_bytes_length": int(len(html_bytes)) if html_bytes else 0,
+            "cfhtml_bytes_sha256": hashlib.sha256(html_bytes).hexdigest() if html_bytes else "",
             "cfhtml_length": len(html_text),
             "plain_length": len(plain_text),
             "cfhtml_preview": html_text[:400],
@@ -161,6 +224,7 @@ def dump_clipboard() -> dict[str, Any]:
             "plain_text": plain_text,
             "fragment": parsed.get("fragment", ""),
             "source_url": parsed.get("source_url", ""),
+            "cfhtml_validation": validation,
         }
     finally:
         user32.CloseClipboard()

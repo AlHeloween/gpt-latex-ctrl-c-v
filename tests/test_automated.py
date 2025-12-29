@@ -10,6 +10,7 @@ Usage:
 import asyncio
 import argparse
 import json
+import os
 import sys
 import threading
 import tempfile
@@ -41,6 +42,7 @@ class AutomatedExtensionTester:
         self._playwright = None
         self.context: BrowserContext = None
         self.page: Page = None
+        self.service_worker = None
         self.results = {
             "tests_run": 0,
             "tests_passed": 0,
@@ -68,7 +70,7 @@ class AutomatedExtensionTester:
 
     def _ensure_chromium_extension(self) -> Path:
         """Build the Chromium MV3 extension dir (deterministic; ensures latest sources are copied)."""
-        from tools.build_chromium_extension import build  # type: ignore
+        from lib.tools.build_chromium_extension import build  # type: ignore
 
         built = build(CHROMIUM_EXTENSION_PATH)
         return built
@@ -132,6 +134,13 @@ class AutomatedExtensionTester:
         
         self.log(f"{self.browser_name} launched with extension", "success")
 
+        if self.browser_name == "chromium":
+            sws = getattr(self.context, "service_workers", None)
+            if sws:
+                self.service_worker = sws[0] if sws else None
+            if not self.service_worker:
+                self.service_worker = await self.context.wait_for_event("serviceworker")
+
     async def load_test_page(self):
         """Load the test HTML page."""
         if self.browser_name == "chromium":
@@ -181,6 +190,33 @@ class AutomatedExtensionTester:
             timeout=5000,
         )
         self.log("Test page loaded", "success")
+
+    async def _chromium_send_to_active_tab(self, message: dict) -> dict | None:
+        if self.browser_name != "chromium" or not self.service_worker:
+            raise RuntimeError("chromium service worker unavailable")
+        return await self.service_worker.evaluate(
+            """
+            async ({ message }) => {
+                const chrome = globalThis.chrome;
+                if (!chrome?.tabs) throw new Error("chrome.tabs unavailable");
+                function call(fn, ...args) {
+                    return new Promise((resolve, reject) => {
+                        fn(...args, (result) => {
+                            const err = chrome.runtime?.lastError;
+                            if (err) reject(new Error(err.message || String(err)));
+                            else resolve(result);
+                        });
+                    });
+                }
+                const tabs = await call(chrome.tabs.query, { active: true, currentWindow: true });
+                const tabId = tabs && tabs[0] ? tabs[0].id : null;
+                if (!tabId) throw new Error("no active tab");
+                const resp = await call(chrome.tabs.sendMessage, tabId, message);
+                return resp || null;
+            }
+            """,
+            {"message": message},
+        )
 
     async def verify_extension_loaded(self) -> bool:
         """Verify extension content script is loaded."""
@@ -249,136 +285,99 @@ class AutomatedExtensionTester:
         
         return selected_text
 
-    async def trigger_copy_via_test_hook(self, selector: str | None = None) -> bool:
-        """Trigger copy via the test-only DOM hook exposed on file:// test pages."""
-        self.log("Triggering copy function...", "info")
-        
+    async def trigger_copy(self, mode: str = "html") -> bool:
+        """Trigger copy through the real background -> content-script message path."""
+        self.log("Triggering copy via extension background...", "info")
+
+        if self.browser_name != "chromium":
+            self.log("Non-Chromium automated copy trigger is not supported", "warning")
+            return False
+
         try:
-            result = await self.page.evaluate("""
-                async ({ selector }) => {
-                    const isTest = document.documentElement &&
-                                   document.documentElement.dataset &&
-                                   document.documentElement.dataset.copyOfficeFormatExtensionLoaded === "true";
-                    if (!isTest) return { success: false, error: "Test hook not available (DOM marker missing)" };
-
-                    const requestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-                    const outcome = await new Promise((resolve) => {
-                        const onResult = (event) => {
-                            const detail = (event && event.detail) ? event.detail : {};
-                            if (detail.requestId !== requestId) return;
-                            window.removeEventListener("__copyOfficeFormatTestResult", onResult);
-                            resolve(detail);
-                        };
-                        window.addEventListener("__copyOfficeFormatTestResult", onResult);
-                        window.dispatchEvent(new CustomEvent("__copyOfficeFormatTestRequest", { detail: { requestId, selector } }));
-                        setTimeout(() => {
-                            window.removeEventListener("__copyOfficeFormatTestResult", onResult);
-                            resolve({ requestId, ok: false, error: "timeout" });
-                        }, 10000);
-                    });
-
-                    return { success: !!outcome.ok, error: outcome.error || null };
-                }
-            """, {"selector": selector})
-            
-            if result.get("success"):
+            resp = await self._chromium_send_to_active_tab({"type": "COPY_OFFICE_FORMAT", "mode": mode})
+            if resp and resp.get("ok"):
                 self.log("Copy request completed", "success")
                 return True
-            else:
-                error_msg = result.get('error', 'Unknown error')
-                self.log(f"Failed to send message: {error_msg}", "error")
-                self.results["errors"].append(f"Message send failed: {error_msg}")
-                return False
+            err = (resp or {}).get("error") if isinstance(resp, dict) else None
+            last_err = await self.page.evaluate(
+                "() => document.documentElement?.dataset?.copyOfficeFormatLastCopyError || ''"
+            )
+            m = err or last_err or "unknown error"
+            self.log(f"Copy request failed: {m}", "error")
+            self.results["errors"].append(f"Copy failed: {m}")
+            return False
         except Exception as e:
-            self.log(f"Error triggering copy: {e}", "error")
+            self.log(f"Copy trigger failed: {e}", "error")
             self.results["errors"].append(f"Copy trigger error: {str(e)}")
             return False
 
-    async def verify_clipboard_content(self) -> dict:
-        """Verify last copy payload captured by the content-script test hook."""
-        self.log("Verifying copy payload...", "info")
+    async def verify_clipboard_content(self, expected_token: str, before_sha: str, expect_formulas: bool) -> dict:
+        """Verify OS clipboard content was updated by the extension."""
+        self.log("Verifying OS clipboard content...", "info")
 
-        clipboard_data = await self.page.evaluate("""
-            () => {
-                const bridge = document.getElementById("__copyOfficeFormatTestBridge");
-                if (!bridge || !bridge.value) return { error: "No captured payload (bridge missing)" };
-                try {
-                    const parsed = JSON.parse(bridge.value);
-                    return parsed.lastClipboard || { error: "No lastClipboard in bridge" };
-                } catch (e) {
-                    return { error: "Failed to parse bridge payload" };
-                }
-            }
-        """)
-        
         verification = {
             "has_content": False,
             "has_html": False,
             "has_plain_text": False,
             "contains_omml": False,
             "contains_mathml": False,
-            "no_raw_latex": True,
             "no_parse_error_markers": True,
             "error": None,
         }
-        
-        if "error" in clipboard_data:
-            verification["error"] = clipboard_data.get("error")
-            self.log(f"Payload error: {verification['error']}", "warning")
-            return verification
-        
-        if not clipboard_data:
-            self.log("No payload captured", "error")
-            return verification
-        
-        verification["has_content"] = True
-        
-        # Check for HTML (CF_HTML payload)
-        html_content = clipboard_data.get("cfhtml", "") or ""
-        if html_content:
-            verification["has_html"] = True
-            self.log(f"Clipboard contains HTML ({len(html_content)} chars)", "success")
-            self.log(f"  HTML preview: {html_content[:100]}...", "debug")
-            
-            # Detect Office-friendly OMML embedding (preferred for Word) and MathML (fallback/compat).
-            low = html_content.lower()
-            if ("mso-element:omath" in low) or ("<m:omath" in low) or ("<m:omathpara" in low):
-                verification["contains_omml"] = True
-                self.log("Clipboard HTML contains OMML/Office math markers", "success")
-            
-            # Check for MathML
-            if "http://www.w3.org/1998/Math/MathML" in html_content:
-                verification["contains_mathml"] = True
-                self.log("Clipboard HTML contains MathML namespace", "success")
-            
-            # We provide raw HTML (no Windows CF_HTML header). The browser/OS clipboard layer can
-            # translate this into platform clipboard formats (e.g., Windows "HTML Format").
-            if ("starthtml:" in low) or ("endhtml:" in low) or ("startfragment:" in low):
-                verification["error"] = "Clipboard HTML unexpectedly contains CF_HTML header fields"
-                self.log(verification["error"], "error")
-                return verification
-            
-            # Check for raw LaTeX (should not be present if converted)
-            import re
-            if re.search(r'\$[^$]+\$|\\\[.*?\\\]', html_content):
-                verification["no_raw_latex"] = False
-                self.log("Warning: Clipboard contains raw LaTeX (may not be converted)", "warning")
-            else:
-                self.log("No raw LaTeX found (formulas likely converted)", "success")
 
-            # Guardrail: do not emit placeholder parse errors into clipboard HTML/MathML.
-            if "[PARSE ERROR:" in html_content:
-                verification["no_parse_error_markers"] = False
-                self.log("Clipboard contains PARSE ERROR markers (conversion produced placeholders)", "error")
-        
-        # Check for plain text
-        plain_text = clipboard_data.get("plainText", "") if isinstance(clipboard_data, dict) else ""
+        if os.name != "nt":
+            verification["error"] = "Windows-only clipboard verification skipped"
+            return verification
+
+        from lib.tools.win_clipboard_dump import dump_clipboard  # type: ignore
+
+        deadline_s = 15.0
+        poll_s = 0.2
+        t0 = asyncio.get_running_loop().time()
+        last = None
+        while True:
+            d = dump_clipboard()
+            last = d
+            sha = d.get("cfhtml_bytes_sha256") or ""
+            plain = d.get("plain_text") or ""
+            if sha and sha != before_sha and expected_token and expected_token in plain:
+                break
+            if asyncio.get_running_loop().time() - t0 >= deadline_s:
+                break
+            await asyncio.sleep(poll_s)
+
+        if not last:
+            verification["error"] = "clipboard read failed"
+            return verification
+
+        verification["has_content"] = True
+        plain_text = str(last.get("plain_text", ""))
         if plain_text:
             verification["has_plain_text"] = True
-            text_len = len(plain_text)
-            self.log(f"Clipboard contains plain text ({text_len} chars)", "success")
-            self.log(f"  Text preview: {plain_text[:50]}...", "debug")
-        
+
+        fragment = str(last.get("fragment", ""))
+        if fragment:
+            verification["has_html"] = True
+            low = fragment.lower()
+            if ("mso-element:omath" in low) or ("<m:omath" in low) or ("<m:omathpara" in low):
+                verification["contains_omml"] = True
+            if "http://www.w3.org/1998/Math/MathML" in low:
+                verification["contains_mathml"] = True
+            if "[PARSE ERROR:" in fragment:
+                verification["no_parse_error_markers"] = False
+
+        if expected_token and expected_token not in plain_text:
+            verification["error"] = "clipboard did not update with expected token"
+            return verification
+
+        if expect_formulas and not (verification["contains_omml"] or verification["contains_mathml"]):
+            verification["error"] = "clipboard missing OMML/MathML"
+            return verification
+
+        if not verification["no_parse_error_markers"]:
+            verification["error"] = "clipboard contains PARSE ERROR markers"
+            return verification
+
         return verification
 
     async def run_test(self, test_name: str, selector: str, expect_formulas: bool = False):
@@ -404,14 +403,28 @@ class AutomatedExtensionTester:
                 self.results["tests_failed"] += 1
                 self.results["errors"].append(f"{test_name}: No text selected")
                 return False
-            
-            # Trigger copy
-            if not await self.trigger_copy_via_test_hook(selector):
+
+            token = (selected.strip().splitlines() or [""])[0][:64]
+            before_sha = ""
+            if os.name == "nt":
+                try:
+                    from lib.tools.win_clipboard_dump import dump_clipboard  # type: ignore
+
+                    before_sha = dump_clipboard().get("cfhtml_bytes_sha256") or ""
+                except Exception:
+                    before_sha = ""
+
+            # Trigger copy (selection already set)
+            if not await self.trigger_copy("html"):
                 self.results["tests_failed"] += 1
                 return False
             
             # Verify clipboard
-            verification = await self.verify_clipboard_content()
+            verification = await self.verify_clipboard_content(
+                expected_token=token,
+                before_sha=before_sha,
+                expect_formulas=expect_formulas,
+            )
             
             # Check results
             passed = True

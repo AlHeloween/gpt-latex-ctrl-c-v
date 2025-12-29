@@ -21,14 +21,15 @@ import re
 import shutil
 import tempfile
 import threading
+import time
 from dataclasses import dataclass
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from playwright.async_api import async_playwright
 
-from tools.build_chromium_extension import build as build_chromium_extension  # type: ignore
-from tools.win_clipboard_dump import dump_clipboard  # type: ignore
+from lib.tools.build_chromium_extension import build as build_chromium_extension  # type: ignore
+from lib.tools.win_clipboard_dump import dump_clipboard  # type: ignore
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -114,26 +115,6 @@ def _discover_examples(examples_dir: Path) -> list[ExampleCase]:
     return cases
 
 
-def _is_selection_source_example(html_path: Path) -> bool:
-    try:
-        head = html_path.read_text(encoding="utf-8", errors="ignore")[:5000]
-    except Exception:
-        return False
-    return (
-        "DOM Source of Selection" in head
-        or 'id="viewsource"' in head
-        or "viewsource.css" in head
-        or "resource://content-accessible/viewsource.css" in head
-    )
-
-
-def _selection_source_anchor(case_name: str) -> str:
-    # Deterministic, human-readable anchor that should appear in the exported Markdown.
-    if case_name == "2025-12-28-Document_Continuity":
-        return "Comprehensive Integration of Dual Phasor Architectures"
-    return ""
-
-
 async def _dom_prove_ready(page) -> None:
     await page.wait_for_selector("body", timeout=5000, state="attached")
     await page.wait_for_function(
@@ -148,32 +129,89 @@ async def _wait_extension_marker(page) -> None:
         timeout=15_000,
     )
 
-
-async def _trigger_copy_markdown(page, selector: str, timeout_ms: int) -> None:
-    await page.evaluate(
+async def _chromium_send_to_active_tab(service_worker, message: dict) -> dict | None:
+    return await service_worker.evaluate(
         """
-        ({ selector, timeoutMs }) => new Promise((resolve, reject) => {
-            const requestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-            const timeout = setTimeout(
-              () => reject(new Error('Timed out waiting for __copyOfficeFormatTestResult')),
-              timeoutMs || 10000
-            );
-            function onResult(e) {
-                const d = e?.detail;
-                if (!d || d.requestId !== requestId) return;
-                window.removeEventListener('__copyOfficeFormatTestResult', onResult);
-                clearTimeout(timeout);
-                if (d.ok) resolve(true);
-                else reject(new Error(d.error || 'Copy failed'));
+        async ({ message }) => {
+            const chrome = globalThis.chrome;
+            if (!chrome?.tabs) throw new Error("chrome.tabs unavailable");
+            function call(fn, ...args) {
+                return new Promise((resolve, reject) => {
+                    fn(...args, (result) => {
+                        const err = chrome.runtime?.lastError;
+                        if (err) reject(new Error(err.message || String(err)));
+                        else resolve(result);
+                    });
+                });
             }
-            window.addEventListener('__copyOfficeFormatTestResult', onResult);
-            window.dispatchEvent(new CustomEvent('__copyOfficeFormatTestRequest', {
-              detail: { requestId, selector, mode: 'markdown-export' }
-            }));
-        })
+            const tabs = await call(chrome.tabs.query, { active: true, currentWindow: true });
+            const tabId = tabs && tabs[0] ? tabs[0].id : null;
+            if (!tabId) throw new Error("no active tab");
+            const resp = await call(chrome.tabs.sendMessage, tabId, message);
+            return resp || null;
+        }
         """,
-        {"selector": selector, "timeoutMs": timeout_ms},
+        {"message": message},
     )
+
+
+async def _select_selector(page, selector: str) -> str:
+    return await page.evaluate(
+        """
+        ({ selector }) => {
+            const el = document.querySelector(selector);
+            if (!el) return "";
+            const r = document.createRange();
+            r.selectNodeContents(el);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(r);
+            return sel.toString() || "";
+        }
+        """,
+        {"selector": selector},
+    )
+
+
+def _wait_until_clipboard_contains(marker: str, timeout_s: float = 20.0, poll_s: float = 0.2) -> tuple[dict, list[dict]]:
+    """
+    Deterministic clipboard polling: wait until CF_UNICODETEXT contains `marker`.
+
+    Returns: (final_clipboard_dump, poll_log)
+    """
+    t0 = time.monotonic()
+    polls: list[dict] = []
+    last: dict = {}
+    while True:
+        last = dump_clipboard()
+        plain = str(last.get("plain_text", ""))
+        ok = marker in plain
+        polls.append(
+            {
+                "t_s": round(time.monotonic() - t0, 3),
+                "ok": ok,
+                "plain_len": len(plain),
+            }
+        )
+        if ok:
+            return last, polls
+        if time.monotonic() - t0 >= timeout_s:
+            return last, polls
+        time.sleep(poll_s)
+
+def _pick_visible_token(text: str) -> str:
+    s = str(text or "")
+    s = re.sub(r"<[^>]+>", " ", s)
+    s = re.sub(r"&[A-Za-z0-9#]+;", " ", s)
+    for tok in re.split(r"\s+", s):
+        t = tok.strip("()[]{}<>.,;:!?'\"")
+        if len(t) < 6:
+            continue
+        if any(ch in t for ch in ["<", ">", "=", "\"", "'", "$", "\\"]):
+            continue
+        if re.search(r"[A-Za-z]", t):
+            return t
+    return ""
 
 
 async def main() -> int:
@@ -238,62 +276,55 @@ async def main() -> int:
             ],
         )
         try:
+            # Deterministic clipboard precondition: explicitly grant clipboard permissions for the test origin.
+            await context.grant_permissions(
+                ["clipboard-read", "clipboard-write"],
+                origin=f"http://127.0.0.1:{port}",
+            )
             page = context.pages[0] if context.pages else await context.new_page()
+            service_worker = None
+            sws = getattr(context, "service_workers", None)
+            if sws:
+                service_worker = sws[0] if sws else None
+            if not service_worker:
+                service_worker = await context.wait_for_event("serviceworker")
 
             for case in cases:
                 out_dir = out_root / case.name
                 out_dir.mkdir(parents=True, exist_ok=True)
 
                 url = f"http://127.0.0.1:{port}/{case.rel_path}"
-                marker = f"COF_MD::{case.name}::{port}"
-                is_selection_source = _is_selection_source_example(PROJECT_ROOT / case.rel_path)
 
                 try:
                     await page.goto(url, wait_until="domcontentloaded")
                     await _dom_prove_ready(page)
                     await _wait_extension_marker(page)
 
-                    # Enable real clipboard path for test pages.
-                    await page.evaluate(
-                        "() => { document.documentElement.dataset.copyOfficeFormatRealClipboard = 'true'; }"
-                    )
+                    selected_text = await _select_selector(page, case.selector)
+                    token = _pick_visible_token(selected_text) or (selected_text.strip().splitlines() or [""])[0][:64]
 
-                    # Inject a visible marker so we can assert the clipboard updated for THIS case.
-                    await page.evaluate(
-                        """
-                        ({ selector, marker }) => {
-                          const el = document.querySelector(selector) || document.body;
-                          if (!el) throw new Error("No element found for marker injection");
-                          const span = document.createElement("span");
-                          span.textContent = marker + "\\n";
-                          el.insertBefore(span, el.firstChild);
-                          return true;
-                        }
-                        """,
-                        {"selector": case.selector, "marker": marker},
-                    )
+                    resp = await _chromium_send_to_active_tab(service_worker, {"type": "COPY_AS_MARKDOWN"})
+                    if not resp or not resp.get("ok", False):
+                        err = resp.get("error") if isinstance(resp, dict) else None
+                        last_err = await page.evaluate(
+                            "() => document.documentElement?.dataset?.copyOfficeFormatLastCopyError || ''"
+                        )
+                        raise RuntimeError(f"COPY_AS_MARKDOWN failed: {err or last_err or 'unknown error'}")
 
-                    await _trigger_copy_markdown(page, case.selector, timeout_ms=int(args.timeout_ms))
-
-                    clip = dump_clipboard()
+                    clip, poll_log = _wait_until_clipboard_contains(token, timeout_s=20.0, poll_s=0.2)
                     _write_json(out_dir / "clipboard_dump.json", clip)
+                    _write_json(out_dir / "clipboard_poll_log.json", poll_log)
                     (out_dir / "clipboard_plain.txt").write_text(clip.get("plain_text", ""), encoding="utf-8")
 
                     plain = str(clip.get("plain_text", ""))
-                    if is_selection_source:
-                        # Selection-source extraction replaces the HTML, so the injected marker may not survive.
-                        anchor = _selection_source_anchor(case.name)
-                        ok = len(plain) > 10_000 and (not anchor or anchor in plain)
-                    else:
-                        ok = marker in plain and len(plain.strip()) > len(marker)
+                    ok = token in plain and len(plain.strip()) > len(token)
                     if not ok:
                         summary["ok"] = False
                     summary["cases"][case.name] = {
                         "ok": ok,
-                        "marker": marker,
+                        "token": token,
                         "url": url,
                         "plain_len": len(plain),
-                        "is_selection_source": is_selection_source,
                     }
                 except Exception as e:
                     summary["ok"] = False

@@ -3,7 +3,7 @@ import shutil
 from pathlib import Path
 
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 EXTENSION_ROOT = PROJECT_ROOT / "extension"
 MANIFEST_SOURCE = EXTENSION_ROOT / "manifest.chromium.json"
 
@@ -13,6 +13,9 @@ COPY_ITEMS = [
     "background.js",
     "content-script.js",
     "constants.js",
+    "offscreen.html",
+    "offscreen.js",
+    "lib",
     "assets",
     "icons",
     "wasm",

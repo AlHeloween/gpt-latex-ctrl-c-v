@@ -1,10 +1,10 @@
 """
-Capture the extension's copy payload deterministically via DOM (no clipboard permissions).
+Capture the extension's copy payload via the real extension -> OS clipboard path (Windows).
 
-This uses the content-script's test bridge:
-- documentElement.dataset.copyOfficeFormatExtensionLoaded === "true"
-- textarea#__copyOfficeFormatTestBridge contains JSON with lastClipboard payload
-- dispatch __copyOfficeFormatTestRequest { requestId, selector } and await __copyOfficeFormatTestResult
+This avoids any test-only DOM hooks and treats the OS clipboard as the source of truth:
+- Select DOM content deterministically (explicit selector)
+- Trigger the extension copy via MV3 background service worker -> tabs.sendMessage
+- Read Windows clipboard "HTML Format" + CF_UNICODETEXT and persist a JSON payload
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import shutil
 import threading
 import time
@@ -22,7 +23,7 @@ from typing import Any
 from playwright.async_api import async_playwright
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 class _QuietHandler(SimpleHTTPRequestHandler):
@@ -67,54 +68,50 @@ async def _wait_extension_marker(page) -> None:
         timeout=15_000,
     )
 
-
-async def _trigger_copy(page, selector: str | None) -> None:
-    await _trigger_copy_with_timeout(page, selector, timeout_ms=30000)
-
-
-async def _trigger_copy_with_timeout(page, selector: str | None, timeout_ms: int) -> None:
-    await page.evaluate(
+async def _chromium_send_to_active_tab(service_worker, message: dict) -> dict | None:
+    return await service_worker.evaluate(
         """
-        ({ selector, timeoutMs }) => new Promise((resolve, reject) => {
-            const requestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-            window.__copyOfficeFormatTestLastRequestId = requestId;
-            const timeout = setTimeout(
-              () => reject(new Error("Timed out waiting for __copyOfficeFormatTestResult")),
-              timeoutMs || 10000
-            );
-            function onResult(e) {
-                const d = e?.detail;
-                if (!d || d.requestId !== requestId) return;
-                window.removeEventListener("__copyOfficeFormatTestResult", onResult);
-                clearTimeout(timeout);
-                if (d.ok) resolve(true);
-                else reject(new Error(d.error || "Copy failed"));
+        async ({ message }) => {
+            const chrome = globalThis.chrome;
+            if (!chrome?.tabs) throw new Error("chrome.tabs unavailable");
+            function call(fn, ...args) {
+                return new Promise((resolve, reject) => {
+                    fn(...args, (result) => {
+                        const err = chrome.runtime?.lastError;
+                        if (err) reject(new Error(err.message || String(err)));
+                        else resolve(result);
+                    });
+                });
             }
-            window.addEventListener("__copyOfficeFormatTestResult", onResult);
-
-            // Dispatch only after the listener is attached (avoid race).
-            window.dispatchEvent(new CustomEvent("__copyOfficeFormatTestRequest", { detail: { requestId, selector } }));
-        })
-        """,
-        {"selector": selector, "timeoutMs": timeout_ms},
-    )
-
-
-async def _read_payload(page) -> dict[str, Any]:
-    raw = await page.evaluate(
-        """
-        () => {
-            const el = document.getElementById("__copyOfficeFormatTestBridge");
-            return el ? el.value : null;
+            const tabs = await call(chrome.tabs.query, { active: true, currentWindow: true });
+            const tabId = tabs && tabs[0] ? tabs[0].id : null;
+            if (!tabId) throw new Error("no active tab");
+            const resp = await call(chrome.tabs.sendMessage, tabId, message);
+            return resp || null;
         }
-        """
+        """,
+        {"message": message},
     )
-    if not raw:
-        raise RuntimeError("Test bridge textarea missing or empty")
-    data = json.loads(raw)
-    if "lastClipboard" not in data:
-        raise RuntimeError("Bridge JSON missing lastClipboard")
-    return data
+
+
+async def _select_selector(page, selector: str | None) -> str:
+    if not selector:
+        selector = "body"
+    return await page.evaluate(
+        """
+        ({ selector }) => {
+            const el = document.querySelector(selector);
+            if (!el) return "";
+            const r = document.createRange();
+            r.selectNodeContents(el);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(r);
+            return sel.toString() || "";
+        }
+        """,
+        {"selector": selector},
+    )
 
 
 async def run(
@@ -126,9 +123,14 @@ async def run(
     timeout_ms: int,
     show_ui: bool = False,
 ) -> None:
+    if os.name != "nt":
+        raise RuntimeError("capture_extension_payload is Windows-only (needs OS clipboard access)")
+
+    from lib.tools.win_clipboard_dump import dump_clipboard  # type: ignore
+
     # Always rebuild the Chromium extension bundle so we never test a stale dist/.
     chromium_dir = PROJECT_ROOT / "dist" / "chromium"
-    from tools.build_chromium_extension import build  # type: ignore
+    from lib.tools.build_chromium_extension import build  # type: ignore
 
     build(chromium_dir)
 
@@ -173,6 +175,18 @@ async def run(
             ],
         )
         try:
+            await context.grant_permissions(
+                ["clipboard-read", "clipboard-write"],
+                origin=f"http://127.0.0.1:{port}",
+            )
+
+            service_worker = None
+            sws = getattr(context, "service_workers", None)
+            if sws:
+                service_worker = sws[0] if sws else None
+            if not service_worker:
+                service_worker = await context.wait_for_event("serviceworker")
+
             page = context.pages[0] if context.pages else await context.new_page()
             # XSS fixtures intentionally trigger dialogs; dismiss deterministically.
             try:
@@ -195,8 +209,49 @@ async def run(
             await page.goto(url, wait_until="domcontentloaded")
             await _dom_prove_ready(page)
             await _wait_extension_marker(page)
-            await _trigger_copy_with_timeout(page, selector, timeout_ms=timeout_ms)
-            payload = await _read_payload(page)
+
+            selected_text = await _select_selector(page, selector)
+            token = (selected_text.strip().splitlines() or [""])[0][:64]
+            before_sha = dump_clipboard().get("cfhtml_bytes_sha256") or ""
+
+            resp = await _chromium_send_to_active_tab(
+                service_worker,
+                {"type": "COPY_OFFICE_FORMAT", "mode": "html"},
+            )
+            if not resp or not resp.get("ok", False):
+                err = resp.get("error") if isinstance(resp, dict) else None
+                last_err = await page.evaluate(
+                    "() => document.documentElement?.dataset?.copyOfficeFormatLastCopyError || ''"
+                )
+                raise RuntimeError(f"COPY_OFFICE_FORMAT failed: {err or last_err or 'unknown error'}")
+
+            # Wait until OS clipboard reflects this selection.
+            t0 = time.monotonic()
+            last = None
+            while True:
+                d = dump_clipboard()
+                last = d
+                sha = d.get("cfhtml_bytes_sha256") or ""
+                plain = d.get("plain_text") or ""
+                if sha and sha != before_sha and token and token in plain:
+                    break
+                if time.monotonic() - t0 >= max(2.0, float(timeout_ms) / 1000.0):
+                    break
+                time.sleep(0.2)
+
+            if not last:
+                raise RuntimeError("Failed to read clipboard")
+            if token and token not in str(last.get("plain_text", "")):
+                raise RuntimeError("Clipboard did not update with expected selection token")
+
+            payload = {
+                "lastClipboard": {
+                    "wrappedHtml": last.get("fragment") or "",
+                    "plainText": last.get("plain_text") or "",
+                    "cfhtml": last.get("cfhtml") or "",
+                    "sourceUrl": last.get("source_url") or "",
+                },
+            }
             out_json.parent.mkdir(parents=True, exist_ok=True)
             out_json.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         finally:
@@ -216,7 +271,7 @@ async def run(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Capture extension copy payload via DOM test bridge.")
+    parser = argparse.ArgumentParser(description="Capture extension copy payload via real clipboard (Windows).")
     parser.add_argument(
         "--path",
         default="",

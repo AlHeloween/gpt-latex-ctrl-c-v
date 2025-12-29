@@ -1,8 +1,10 @@
 use crate::entities::decode_entities;
-use crate::markdown::markdown_to_html_string;
+use crate::markdown::{html_to_markdown_text, markdown_to_html_string};
 use crate::normalize::normalize_latex;
 use crate::office::html_to_office_html;
 use crate::sanitize::sanitize_for_office;
+use crate::selection;
+use crate::tex;
 use html5ever::parse_document;
 use html5ever::tendril::TendrilSink;
 use markup5ever_rcdom::{Handle, NodeData, RcDom};
@@ -177,6 +179,27 @@ fn emit_text_with_tex_placeholders(out: &mut String, text: &str, jobs: &mut Vec<
         if bytes[i] == b'$' && !text[i..].starts_with("$$") {
             let escaped = i > 0 && bytes[i - 1] == b'\\';
             if !escaped {
+                // Currency guardrail: "$100 ..." should not start an inline math span that
+                // accidentally pairs with a later "$" (common in chat transcripts).
+                // If the run of non-whitespace immediately after "$" is currency-like, treat
+                // this "$" as a literal and continue scanning.
+                let mut k = i + 1;
+                while k < bytes.len() {
+                    if bytes[k].is_ascii_whitespace() || bytes[k] == b'$' {
+                        break;
+                    }
+                    let ch = text[k..].chars().next().unwrap_or('\0');
+                    k += ch.len_utf8().max(1);
+                }
+                if k > i + 1 && k < bytes.len() && bytes[k].is_ascii_whitespace() {
+                    let prefix = &text[i + 1..k];
+                    if is_currency_like_inline_dollar(prefix) {
+                        let ch = text[i..].chars().next().unwrap_or('\0');
+                        i += ch.len_utf8().max(1);
+                        continue;
+                    }
+                }
+
                 // Find the next non-escaped "$".
                 let mut j = i + 1;
                 while j < bytes.len() {
@@ -467,6 +490,69 @@ pub fn html_to_office_prepared(input_html: &str) -> PreparedOffice {
     PreparedOffice { html, jobs }
 }
 
+pub fn html_to_office_with_mathml(input_html: &str) -> Result<String, String> {
+    let prepared = html_to_office_prepared(input_html);
+    let mut out_mathml: Vec<String> = Vec::with_capacity(prepared.jobs.len());
+    for job in &prepared.jobs {
+        match tex::tex_to_mathml(&job.latex, job.display) {
+            Ok(m) => out_mathml.push(m),
+            Err(_) => out_mathml.push(String::new()),
+        }
+    }
+    let joined = out_mathml.join("\u{001F}");
+    office_apply_mathml(&prepared.html, &joined)
+}
+
+pub fn page_selection_to_office_with_mathml(page_html: &str, token_pairs: &str) -> Result<String, String> {
+    let record_sep = '\u{001E}';
+    let pair_sep = '\u{001F}';
+    let mut out = String::new();
+
+    for pair in token_pairs.split(record_sep) {
+        if pair.is_empty() {
+            continue;
+        }
+        let mut it = pair.split(pair_sep);
+        let start = it.next().unwrap_or("");
+        let end = it.next().unwrap_or("");
+        if start.is_empty() || end.is_empty() {
+            return Err("token_pairs must be (start\\u001Fend) joined by \\u001E".to_string());
+        }
+        out.push_str(&selection::extract_fragment_by_comment_tokens(page_html, start, end)?);
+    }
+
+    if out.is_empty() {
+        return Err("no selection extracted".to_string());
+    }
+
+    html_to_office_with_mathml(&out)
+}
+
+pub fn page_selection_to_markdown(page_html: &str, token_pairs: &str) -> Result<String, String> {
+    let record_sep = '\u{001E}';
+    let pair_sep = '\u{001F}';
+    let mut out = String::new();
+
+    for pair in token_pairs.split(record_sep) {
+        if pair.is_empty() {
+            continue;
+        }
+        let mut it = pair.split(pair_sep);
+        let start = it.next().unwrap_or("");
+        let end = it.next().unwrap_or("");
+        if start.is_empty() || end.is_empty() {
+            return Err("token_pairs must be (start\\u001Fend) joined by \\u001E".to_string());
+        }
+        out.push_str(&selection::extract_fragment_by_comment_tokens(page_html, start, end)?);
+    }
+
+    if out.is_empty() {
+        return Err("no selection extracted".to_string());
+    }
+
+    Ok(html_to_markdown_text(&out))
+}
+
 fn inject_markdown_math_placeholders(md: &str) -> (String, Vec<TexJob>) {
     let mut out = String::with_capacity(md.len());
     let mut jobs: Vec<TexJob> = Vec::new();
@@ -561,6 +647,19 @@ pub fn markdown_to_office_prepared(md: &str) -> PreparedOffice {
     PreparedOffice { html, jobs }
 }
 
+pub fn markdown_to_office_with_mathml(md: &str) -> Result<String, String> {
+    let prepared = markdown_to_office_prepared(md);
+    let mut out_mathml: Vec<String> = Vec::with_capacity(prepared.jobs.len());
+    for job in &prepared.jobs {
+        match tex::tex_to_mathml(&job.latex, job.display) {
+            Ok(m) => out_mathml.push(m),
+            Err(_) => out_mathml.push(String::new()),
+        }
+    }
+    let joined = out_mathml.join("\u{001F}");
+    office_apply_mathml(&prepared.html, &joined)
+}
+
 pub fn office_apply_mathml(html: &str, joined_mathml: &str) -> Result<String, String> {
     let sep = '\u{001F}';
     let parts: Vec<&str> = if joined_mathml.is_empty() {
@@ -619,6 +718,14 @@ mod tests {
         assert_eq!(prepared.jobs.len(), 1);
         assert!(prepared.jobs[0].display);
         assert!(prepared.jobs[0].latex.contains("\\frac"));
+    }
+
+    #[test]
+    fn html_to_office_with_mathml_inlines_mathml() {
+        let html = r#"<p>Math: $x^2$</p>"#;
+        let out = html_to_office_with_mathml(html).unwrap();
+        assert!(out.to_ascii_lowercase().contains("<math"));
+        assert!(!out.contains("COF_TEX_0"));
     }
 
     #[test]

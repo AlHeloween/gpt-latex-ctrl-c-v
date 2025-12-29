@@ -119,32 +119,3 @@ pub fn html_to_office_html(input: &str) -> String {
 
     out
 }
-
-fn escape_attr_value(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() + (s.len() / 10));
-    for c in s.chars() {
-        match c {
-            '&' => out.push_str("&amp;"),
-            '"' => out.push_str("&quot;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            _ => out.push(c),
-        }
-    }
-    out
-}
-
-pub fn wrap_html_for_clipboard(fragment_html: &str, base_url: &str) -> String {
-    let mut out = String::with_capacity(fragment_html.len() + 256);
-    out.push_str("<html><head><meta charset=\"utf-8\">");
-    let base = base_url.trim();
-    if !base.is_empty() {
-        out.push_str("<base href=\"");
-        out.push_str(&escape_attr_value(base));
-        out.push_str("\">");
-    }
-    out.push_str("</head><body><!--StartFragment-->");
-    out.push_str(fragment_html);
-    out.push_str("<!--EndFragment--></body></html>");
-    out
-}

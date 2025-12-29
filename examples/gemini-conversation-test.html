@@ -1,142 +1,187 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Gemini Conversation Test - TeX Formulas</title>
     <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            max-width: 800px;
-            margin: 40px auto;
-            padding: 20px;
-            background: #f5f5f5;
-        }
-        user-query-content, message-content {
-            display: block;
-            padding: 12px 16px;
-            margin: 12px 0;
-            border-radius: 8px;
-            line-height: 1.6;
-        }
-        user-query-content {
-            background: #e8f0fe;
-            border-left: 4px solid #1a73e8;
-        }
-        message-content {
-            background: #ffffff;
-            border-left: 4px solid #34a853;
-        }
-        p {
-            margin: 8px 0;
-        }
-        code {
-            background: #f1f3f4;
-            padding: 2px 6px;
-            border-radius: 3px;
-            font-family: 'Courier New', monospace;
-        }
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        max-width: 800px;
+        margin: 40px auto;
+        padding: 20px;
+        background: #f5f5f5;
+      }
+      user-query-content,
+      message-content {
+        display: block;
+        padding: 12px 16px;
+        margin: 12px 0;
+        border-radius: 8px;
+        line-height: 1.6;
+      }
+      user-query-content {
+        background: #e8f0fe;
+        border-left: 4px solid #1a73e8;
+      }
+      message-content {
+        background: #ffffff;
+        border-left: 4px solid #34a853;
+      }
+      p {
+        margin: 8px 0;
+      }
+      code {
+        background: #f1f3f4;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-family: "Courier New", monospace;
+      }
     </style>
-</head>
-<body>
+  </head>
+  <body>
     <h1>Gemini Conversation Test - Select and Copy with LaTeX Formulas</h1>
-    <p><strong>Instructions:</strong> Select any part of the conversation below, right-click, and choose "Copy as Office Format". Then paste into Microsoft Word and save as DOCX to verify formulas are converted correctly.</p>
-    
-    <hr style="margin: 30px 0;">
-    
-    <user-query-content>
-        <p>Can you explain the quadratic formula?</p>
-    </user-query-content>
-    
-    <message-content>
-        <p>The quadratic formula solves equations of the form $ax^2 + bx + c = 0$:</p>
-        <p>\[x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}\]</p>
-        <p>Where $a \neq 0$. The discriminant $\Delta = b^2 - 4ac$ determines the nature of the roots.</p>
-    </message-content>
-    
-    <user-query-content>
-        <p>What about the Pythagorean theorem?</p>
-    </user-query-content>
-    
-    <message-content>
-        <p>For a right triangle, the Pythagorean theorem states:</p>
-        <p>\[a^2 + b^2 = c^2\]</p>
-        <p>Where $c$ is the hypotenuse. For example, if $a = 3$ and $b = 4$, then $c = \sqrt{3^2 + 4^2} = 5$.</p>
-    </message-content>
-    
-    <user-query-content>
-        <p>Show me Euler's identity.</p>
-    </user-query-content>
-    
-    <message-content>
-        <p>Euler's identity is considered one of the most beautiful equations in mathematics:</p>
-        <p>\[e^{i\pi} + 1 = 0\]</p>
-        <p>It connects five fundamental constants: $e$ (Euler's number), $i$ (imaginary unit), $\pi$ (pi), $1$, and $0$.</p>
-    </message-content>
-    
-    <user-query-content>
-        <p>How do I calculate the derivative of $f(x) = x^3$?</p>
-    </user-query-content>
-    
-    <message-content>
-        <p>Using the power rule, the derivative is:</p>
-        <p>\[f'(x) = \frac{d}{dx}(x^3) = 3x^2\]</p>
-        <p>More generally, for $f(x) = x^n$, we have $f'(x) = nx^{n-1}$.</p>
-    </message-content>
-    
-    <user-query-content>
-        <p>What's the integral of $\sin(x)$?</p>
-    </user-query-content>
-    
-    <message-content>
-        <p>The integral of $\sin(x)$ is:</p>
-        <p>\[\int \sin(x) \, dx = -\cos(x) + C\]</p>
-        <p>Where $C$ is the constant of integration. For definite integrals: $\int_0^{\pi} \sin(x) \, dx = 2$.</p>
-    </message-content>
-    
-    <user-query-content>
-        <p>Explain the binomial theorem.</p>
-    </user-query-content>
-    
-    <message-content>
-        <p>The binomial theorem expands $(a + b)^n$:</p>
-        <p>\[(a + b)^n = \sum_{k=0}^{n} \binom{n}{k} a^{n-k} b^k\]</p>
-        <p>Where $\binom{n}{k} = \frac{n!}{k!(n-k)!}$ is the binomial coefficient. For example, $(x + y)^2 = x^2 + 2xy + y^2$.</p>
-    </message-content>
-    
-    <user-query-content>
-        <p>What is the matrix multiplication formula?</p>
-    </user-query-content>
-    
-    <message-content>
-        <p>For matrices $A$ (size $m \times n$) and $B$ (size $n \times p$), the product $C = AB$ has elements:</p>
-        <p>\[c_{ij} = \sum_{k=1}^{n} a_{ik} b_{kj}\]</p>
-        <p>The result is an $m \times p$ matrix. Matrix multiplication is not commutative: $AB \neq BA$ in general.</p>
-    </message-content>
-    
-    <user-query-content>
-        <p>Show me the definition of a limit.</p>
-    </user-query-content>
-    
-    <message-content>
-        <p>The limit of $f(x)$ as $x$ approaches $a$ is $L$, written $\lim_{x \to a} f(x) = L$, if:</p>
-        <p>\[\forall \epsilon > 0, \exists \delta > 0 : |x - a| < \delta \implies |f(x) - L| < \epsilon\]</p>
-        <p>This is the formal $\epsilon$-$\delta$ definition of a limit.</p>
-    </message-content>
-    
-    <user-query-content>
-        <p>What's the formula for compound interest?</p>
-    </user-query-content>
-    
-    <message-content>
-        <p>Compound interest is calculated as:</p>
-        <p>\[A = P\left(1 + \frac{r}{n}\right)^{nt}\]</p>
-        <p>Where $A$ is the final amount, $P$ is principal, $r$ is annual rate, $n$ is compounding frequency, and $t$ is time in years. For continuous compounding: $A = Pe^{rt}$.</p>
-    </message-content>
-    
-    <hr style="margin: 30px 0;">
-    <p style="color: #666; font-size: 0.9em;"><strong>Test completed:</strong> This conversation contains 10 message pairs with various LaTeX formulas including inline ($...$), display (\[...\]), fractions, superscripts, subscripts, integrals, sums, and matrices.</p>
-    
-</body>
-</html>
+    <p>
+      <strong>Instructions:</strong> Select any part of the conversation below,
+      right-click, and choose "Copy as Office Format". Then paste into Microsoft
+      Word and save as DOCX to verify formulas are converted correctly.
+    </p>
 
+    <hr style="margin: 30px 0" />
+
+    <user-query-content>
+      <p>Can you explain the quadratic formula?</p>
+    </user-query-content>
+
+    <message-content>
+      <p>
+        The quadratic formula solves equations of the form $ax^2 + bx + c = 0$:
+      </p>
+      <p>\[x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}\]</p>
+      <p>
+        Where $a \neq 0$. The discriminant $\Delta = b^2 - 4ac$ determines the
+        nature of the roots.
+      </p>
+    </message-content>
+
+    <user-query-content>
+      <p>What about the Pythagorean theorem?</p>
+    </user-query-content>
+
+    <message-content>
+      <p>For a right triangle, the Pythagorean theorem states:</p>
+      <p>\[a^2 + b^2 = c^2\]</p>
+      <p>
+        Where $c$ is the hypotenuse. For example, if $a = 3$ and $b = 4$, then
+        $c = \sqrt{3^2 + 4^2} = 5$.
+      </p>
+    </message-content>
+
+    <user-query-content>
+      <p>Show me Euler's identity.</p>
+    </user-query-content>
+
+    <message-content>
+      <p>
+        Euler's identity is considered one of the most beautiful equations in
+        mathematics:
+      </p>
+      <p>\[e^{i\pi} + 1 = 0\]</p>
+      <p>
+        It connects five fundamental constants: $e$ (Euler's number), $i$
+        (imaginary unit), $\pi$ (pi), $1$, and $0$.
+      </p>
+    </message-content>
+
+    <user-query-content>
+      <p>How do I calculate the derivative of $f(x) = x^3$?</p>
+    </user-query-content>
+
+    <message-content>
+      <p>Using the power rule, the derivative is:</p>
+      <p>\[f'(x) = \frac{d}{dx}(x^3) = 3x^2\]</p>
+      <p>More generally, for $f(x) = x^n$, we have $f'(x) = nx^{n-1}$.</p>
+    </message-content>
+
+    <user-query-content>
+      <p>What's the integral of $\sin(x)$?</p>
+    </user-query-content>
+
+    <message-content>
+      <p>The integral of $\sin(x)$ is:</p>
+      <p>\[\int \sin(x) \, dx = -\cos(x) + C\]</p>
+      <p>
+        Where $C$ is the constant of integration. For definite integrals:
+        $\int_0^{\pi} \sin(x) \, dx = 2$.
+      </p>
+    </message-content>
+
+    <user-query-content>
+      <p>Explain the binomial theorem.</p>
+    </user-query-content>
+
+    <message-content>
+      <p>The binomial theorem expands $(a + b)^n$:</p>
+      <p>\[(a + b)^n = \sum_{k=0}^{n} \binom{n}{k} a^{n-k} b^k\]</p>
+      <p>
+        Where $\binom{n}{k} = \frac{n!}{k!(n-k)!}$ is the binomial coefficient.
+        For example, $(x + y)^2 = x^2 + 2xy + y^2$.
+      </p>
+    </message-content>
+
+    <user-query-content>
+      <p>What is the matrix multiplication formula?</p>
+    </user-query-content>
+
+    <message-content>
+      <p>
+        For matrices $A$ (size $m \times n$) and $B$ (size $n \times p$), the
+        product $C = AB$ has elements:
+      </p>
+      <p>\[c_{ij} = \sum_{k=1}^{n} a_{ik} b_{kj}\]</p>
+      <p>
+        The result is an $m \times p$ matrix. Matrix multiplication is not
+        commutative: $AB \neq BA$ in general.
+      </p>
+    </message-content>
+
+    <user-query-content>
+      <p>Show me the definition of a limit.</p>
+    </user-query-content>
+
+    <message-content>
+      <p>
+        The limit of $f(x)$ as $x$ approaches $a$ is $L$, written $\lim_{x \to
+        a} f(x) = L$, if:
+      </p>
+      <p>
+        \[\forall \epsilon > 0, \exists \delta > 0 : |x - a| < \delta \implies
+        |f(x) - L| < \epsilon\]
+      </p>
+      <p>This is the formal $\epsilon$-$\delta$ definition of a limit.</p>
+    </message-content>
+
+    <user-query-content>
+      <p>What's the formula for compound interest?</p>
+    </user-query-content>
+
+    <message-content>
+      <p>Compound interest is calculated as:</p>
+      <p>\[A = P\left(1 + \frac{r}{n}\right)^{nt}\]</p>
+      <p>
+        Where $A$ is the final amount, $P$ is principal, $r$ is annual rate, $n$
+        is compounding frequency, and $t$ is time in years. For continuous
+        compounding: $A = Pe^{rt}$.
+      </p>
+    </message-content>
+
+    <hr style="margin: 30px 0" />
+    <p style="color: #666; font-size: 0.9em">
+      <strong>Test completed:</strong> This conversation contains 10 message
+      pairs with various LaTeX formulas including inline ($...$), display
+      (\[...\]), fractions, superscripts, subscripts, integrals, sums, and
+      matrices.
+    </p>
+  </body>
+</html>

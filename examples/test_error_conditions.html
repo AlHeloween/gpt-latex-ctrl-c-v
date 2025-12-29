@@ -1,58 +1,66 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Error Conditions Test</title>
     <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            max-width: 800px;
-            margin: 40px auto;
-            padding: 20px;
-            background: #f5f5f5;
-        }
-        .test-section {
-            background: #ffffff;
-            padding: 20px;
-            border-radius: 8px;
-            border-left: 4px solid #6c757d;
-            line-height: 1.6;
-            margin: 20px 0;
-        }
-        p {
-            margin: 8px 0;
-        }
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        max-width: 800px;
+        margin: 40px auto;
+        padding: 20px;
+        background: #f5f5f5;
+      }
+      .test-section {
+        background: #ffffff;
+        padding: 20px;
+        border-radius: 8px;
+        border-left: 4px solid #6c757d;
+        line-height: 1.6;
+        margin: 20px 0;
+      }
+      p {
+        margin: 8px 0;
+      }
     </style>
-</head>
-<body>
+  </head>
+  <body>
     <h1>Error Conditions Test</h1>
-    <p><strong>Purpose:</strong> Test error handling for various failure scenarios.</p>
-    
-    <hr style="margin: 30px 0;">
-    
-    <div class="test-section">
-        <h2>Empty Selection</h2>
-        <p>This section tests handling of empty selections.</p>
-        <p>Select nothing and try to copy - should handle gracefully.</p>
-    </div>
-    
-    <div class="test-section">
-        <h2>Collapsed Selection</h2>
-        <p>This section tests handling of collapsed selections (cursor position only).</p>
-        <p>Click to place cursor and try to copy - should handle gracefully.</p>
-    </div>
-    
-    <div class="test-section">
-        <h2>Valid Content</h2>
-        <p>This section contains valid content with formulas for comparison.</p>
-        <p>Quadratic formula: $x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}$</p>
-        <p>Euler's identity: $e^{i\pi} + 1 = 0$</p>
-    </div>
-    
-    <hr style="margin: 30px 0;">
-    <p style="color: #666; font-size: 0.9em;"><strong>Expected:</strong> Error conditions should be handled gracefully without crashing. Valid content should still work.</p>
-    
-</body>
-</html>
+    <p>
+      <strong>Purpose:</strong> Test error handling for various failure
+      scenarios.
+    </p>
 
+    <hr style="margin: 30px 0" />
+
+    <div class="test-section">
+      <h2>Empty Selection</h2>
+      <p>This section tests handling of empty selections.</p>
+      <p>Select nothing and try to copy - should handle gracefully.</p>
+    </div>
+
+    <div class="test-section">
+      <h2>Collapsed Selection</h2>
+      <p>
+        This section tests handling of collapsed selections (cursor position
+        only).
+      </p>
+      <p>Click to place cursor and try to copy - should handle gracefully.</p>
+    </div>
+
+    <div class="test-section">
+      <h2>Valid Content</h2>
+      <p>This section contains valid content with formulas for comparison.</p>
+      <p>Quadratic formula: $x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}$</p>
+      <p>Euler's identity: $e^{i\pi} + 1 = 0$</p>
+    </div>
+
+    <hr style="margin: 30px 0" />
+    <p style="color: #666; font-size: 0.9em">
+      <strong>Expected:</strong> Error conditions should be handled gracefully
+      without crashing. Valid content should still work.
+    </p>
+  </body>
+</html>

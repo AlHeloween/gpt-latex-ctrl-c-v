@@ -1,77 +1,40 @@
-# Clipboard Debug Mode Enabled
+# Clipboard Debugging (Deterministic)
 
-## Changes Made
+This project intentionally avoids the browser’s native “copy selection” pipeline (letting the browser generate unknown HTML). Clipboard writes use explicit APIs (`navigator.clipboard.write([ClipboardItem])` / `navigator.clipboard.writeText`). If those APIs are unavailable or denied, the extension fails fast with a debuggable error instead of attempting opaque/native copy triggers.
 
-1. **Enabled DEBUG mode** in `extension/content-script.js`
-   - Set `DEBUG = true` for detailed logging
-   - All console logs will now show
+## Quick Checklist
 
-2. **Enhanced Error Logging** in `writeClipboard()`:
-   - Logs when function is called
-   - Logs content lengths
-   - Logs each step of clipboard write
-   - Logs detailed error information
-   - Logs fallback attempts
+- Confirm the content script injected: `document.documentElement.dataset.copyOfficeFormatExtensionLoaded === "true"`.
+- Confirm selection is non-empty: `window.getSelection()?.toString().trim().length > 0`.
+- Trigger copy via a real user gesture (context menu) to satisfy clipboard requirements.
 
-3. **Enhanced Error Logging** in `handleCopy()`:
-   - Logs when copy starts
-   - Logs selection details
-   - Logs each processing step
-   - Logs detailed error information
-   - Logs fallback attempts
+## Windows: Capture What Actually Hit the Clipboard
 
-## How to Debug
+1. Perform the copy action.
+2. Dump OS clipboard formats + extracted HTML fragment:
 
-1. **Open Firefox Console** (F12)
-2. **Load extension** via `about:debugging`
-3. **Select text with formula**
-4. **Right-click → "Copy as Office Format"**
-5. **Check console** for detailed logs:
-   - `[Copy as Office Format]` messages show each step
-   - Error messages show what failed
-   - Success messages confirm what worked
-
-## What to Look For
-
-### Success Flow:
-```
-[Copy as Office Format] Message received: {type: "COPY_OFFICE_FORMAT"}
-[Copy as Office Format] handleCopy called
-[Copy as Office Format] Selection HTML length: XXX
-[Copy as Office Format] Selection text length: XXX
-[Copy as Office Format] writeClipboard called
-[Copy as Office Format] Creating ClipboardItem...
-[Copy as Office Format] Writing to clipboard...
-[Copy as Office Format] ✅ Clipboard write successful
-[Copy as Office Format] ✅ Copy completed successfully
+```powershell
+uv run python lib/tools/win_clipboard_dump.py --out-dir artifacts/clipboard_dump
 ```
 
-### Error Flow:
-```
-[Copy as Office Format] Error: [error message]
-[Copy as Office Format] Error name: [error name]
-[Copy as Office Format] Error message: [detailed message]
-[Copy as Office Format] Error stack: [stack trace]
+3. Validate a captured CF_HTML payload (offsets + fragment markers):
+
+```powershell
+uv run python lib/tools/validate_cf_html.py --in test.bin
 ```
 
-## Common Errors
+## Deterministic Repro With Artifacts (Recommended)
 
-### NotAllowedError
-- **Cause**: Clipboard permission denied or no user gesture
-- **Solution**: Ensure right-click is used (user gesture required)
+- Office copy (real clipboard + Word paste + docx artifacts):
 
-### Clipboard API not available
-- **Cause**: Browser doesn't support clipboard API
-- **Solution**: Extension will use fallback execCommand
+```powershell
+uv run python tests/test_real_clipboard_docx.py --out-root test_results/real_clipboard
+```
 
-### Selection lost
-- **Cause**: Selection cleared during async operations
-- **Solution**: Selection capture should prevent this
+- Copy as Markdown (real clipboard text artifacts):
 
-## Next Steps
+```powershell
+uv run python tests/test_real_clipboard_markdown.py --out-root test_results/real_clipboard_markdown
+```
 
-1. Test with console open
-2. Check all log messages
-3. Identify where it fails
-4. Report specific error message
-
+Both tests only load `examples/*.html` and store per-case artifacts under `test_results/` (clipboard dump, extracted fragment/text, and poll logs).

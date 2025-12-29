@@ -3,13 +3,23 @@
   "name": "Copy as Office Format",
   "version": "0.2.0",
   "description": "Copy browser selections to clipboard in Office-compatible format, preserving formatting and converting LaTeX formulas to Microsoft Equation (OMML) format.",
-  "permissions": ["contextMenus", "activeTab", "clipboardWrite", "tabs"],
+  "permissions": ["contextMenus", "activeTab", "clipboardWrite", "tabs", "offscreen"],
   "host_permissions": ["<all_urls>"],
   "background": { "service_worker": "background.js" },
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["constants.js", "content-script.js"],
+      "js": [
+        "constants.js",
+        "lib/cof-diag.js",
+        "lib/cof-core.js",
+        "lib/cof-wasm.js",
+        "lib/cof-selection.js",
+        "lib/cof-xslt.js",
+        "lib/cof-clipboard.js",
+        "lib/cof-ui.js",
+        "content-script.js"
+      ],
       "run_at": "document_idle",
       "all_frames": false
     }

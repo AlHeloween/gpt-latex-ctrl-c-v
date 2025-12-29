@@ -25,4 +25,3 @@ uv run python tests/test_automated.py --browser chromium
 ## Optional Dependencies
 
 - `pyperclip` is optional for local clipboard inspection helpers.
-

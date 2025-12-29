@@ -4,7 +4,7 @@ Build a Firefox-ready XPI (zip) from the extension/ directory.
 AMO expects an archive with manifest.json at the root.
 
 Usage:
-  uv run python tools/build_firefox_xpi.py --out dist/copy-as-office-format.xpi
+  uv run python lib/tools/build_firefox_xpi.py --out dist/copy-as-office-format.xpi
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ import zipfile
 from pathlib import Path
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 EXTENSION_ROOT = PROJECT_ROOT / "extension"
 
 

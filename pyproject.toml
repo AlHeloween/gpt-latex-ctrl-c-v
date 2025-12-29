@@ -19,7 +19,7 @@ dependencies = [
 [tool.hatch.build.targets.wheel]
 include = [
   "tests/**",
-  "tools/**",
+  "lib/tools/**",
   "extension/**",
   "examples/**",
   "docs/**",

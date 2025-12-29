@@ -7,6 +7,6 @@ license = "MIT"
 [dependencies]
 anyhow = "1.0.100"
 clap = { version = "4.5.45", features = ["derive"] }
-regex = "1.11.2"
+html5ever = "=0.36.1"
+markup5ever_rcdom = "=0.36.0"
 zip = { version = "2.4.2", default-features = false, features = ["deflate"] }
-

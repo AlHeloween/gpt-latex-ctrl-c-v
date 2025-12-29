@@ -3,7 +3,7 @@ Real-life clipboard verification:
 
 - Inputs: examples/*.html only (no fixtures in tests/).
 - Action: load each example in Chromium with the extension, trigger copy, read *OS clipboard* (Windows),
-  and generate a .docx from the clipboard HTML using rust/docx_from_html.
+  and generate a .docx from the clipboard HTML using lib/rust/docx_from_html.
 - Outputs: test_results/real_clipboard/** (JSON + .docx) for inspection.
 
 Notes:
@@ -21,6 +21,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -28,8 +29,8 @@ import threading
 
 from playwright.async_api import async_playwright
 
-from tools.build_chromium_extension import build as build_chromium_extension  # type: ignore
-from tools.win_clipboard_dump import dump_clipboard  # type: ignore
+from lib.tools.build_chromium_extension import build as build_chromium_extension  # type: ignore
+from lib.tools.win_clipboard_dump import dump_clipboard  # type: ignore
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -122,12 +123,12 @@ def _discover_examples(examples_dir: Path) -> list[ExampleCase]:
 
 
 def _build_docx_tool() -> Path:
-    manifest = PROJECT_ROOT / "rust" / "docx_from_html" / "Cargo.toml"
-    out_dir = PROJECT_ROOT / "rust" / "docx_from_html" / "target" / "release"
+    manifest = PROJECT_ROOT / "lib" / "rust" / "docx_from_html" / "Cargo.toml"
+    out_dir = PROJECT_ROOT / "lib" / "rust" / "docx_from_html" / "target" / "release"
     exe = out_dir / ("docx_from_html.exe" if os.name == "nt" else "docx_from_html")
 
     def newest_source_mtime() -> float:
-        src_dir = PROJECT_ROOT / "rust" / "docx_from_html" / "src"
+        src_dir = PROJECT_ROOT / "lib" / "rust" / "docx_from_html" / "src"
         mtimes = [manifest.stat().st_mtime]
         for p in src_dir.rglob("*.rs"):
             try:
@@ -191,30 +192,63 @@ async def _wait_extension_marker(page) -> None:
         timeout=15_000,
     )
 
-
-async def _trigger_copy(page, selector: str, timeout_ms: int) -> None:
-    await page.evaluate(
+async def _chromium_send_to_active_tab(service_worker, message: dict) -> dict | None:
+    return await service_worker.evaluate(
         """
-        ({ selector, timeoutMs }) => new Promise((resolve, reject) => {
-            const requestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-            const timeout = setTimeout(
-              () => reject(new Error('Timed out waiting for __copyOfficeFormatTestResult')),
-              timeoutMs || 10000
-            );
-            function onResult(e) {
-                const d = e?.detail;
-                if (!d || d.requestId !== requestId) return;
-                window.removeEventListener('__copyOfficeFormatTestResult', onResult);
-                clearTimeout(timeout);
-                if (d.ok) resolve(true);
-                else reject(new Error(d.error || 'Copy failed'));
+        async ({ message }) => {
+            const chrome = globalThis.chrome;
+            if (!chrome?.tabs) throw new Error("chrome.tabs unavailable");
+            function call(fn, ...args) {
+                return new Promise((resolve, reject) => {
+                    fn(...args, (result) => {
+                        const err = chrome.runtime?.lastError;
+                        if (err) reject(new Error(err.message || String(err)));
+                        else resolve(result);
+                    });
+                });
             }
-            window.addEventListener('__copyOfficeFormatTestResult', onResult);
-            window.dispatchEvent(new CustomEvent('__copyOfficeFormatTestRequest', { detail: { requestId, selector } }));
-        })
+            const tabs = await call(chrome.tabs.query, { active: true, currentWindow: true });
+            const tabId = tabs && tabs[0] ? tabs[0].id : null;
+            if (!tabId) throw new Error("no active tab");
+            const resp = await call(chrome.tabs.sendMessage, tabId, message);
+            return resp || null;
+        }
         """,
-        {"selector": selector, "timeoutMs": timeout_ms},
+        {"message": message},
     )
+
+
+async def _select_selector(page, selector: str) -> str:
+    return await page.evaluate(
+        """
+        ({ selector }) => {
+            const el = document.querySelector(selector);
+            if (!el) return "";
+            const r = document.createRange();
+            r.selectNodeContents(el);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(r);
+            return sel.toString() || "";
+        }
+        """,
+        {"selector": selector},
+    )
+
+
+def _wait_clipboard_has(token: str, before_sha: str, timeout_s: float = 15.0, poll_s: float = 0.2) -> dict:
+    t0 = time.monotonic()
+    last: dict | None = None
+    while True:
+        d = dump_clipboard()
+        last = d
+        sha = d.get("cfhtml_bytes_sha256") or ""
+        txt = d.get("plain_text") or ""
+        if sha and sha != before_sha and token and token in txt:
+            return d
+        if time.monotonic() - t0 >= timeout_s:
+            return last or {}
+        time.sleep(poll_s)
 
 
 def _wrap_fragment_for_docx(fragment: str) -> str:
@@ -254,7 +288,7 @@ async def main() -> int:
     word_available = True
     word_error: str | None = None
     try:
-        from tools.word_paste_probe import (  # type: ignore
+        from lib.tools.word_paste_probe import (  # type: ignore
             extract_document_xml,
             set_clipboard_cfhtml,
             word_paste_to_docx,
@@ -318,7 +352,19 @@ async def main() -> int:
             ],
         )
         try:
+            # Deterministic clipboard precondition: explicitly grant clipboard permissions for the test origin.
+            # This avoids any reliance on native selection-copy behavior.
+            await context.grant_permissions(
+                ["clipboard-read", "clipboard-write"],
+                origin=f"http://127.0.0.1:{port}",
+            )
             page = context.pages[0] if context.pages else await context.new_page()
+            service_worker = None
+            sws = getattr(context, "service_workers", None)
+            if sws:
+                service_worker = sws[0] if sws else None
+            if not service_worker:
+                service_worker = await context.wait_for_event("serviceworker")
 
             for case in cases:
                 out_dir = out_root / case.name
@@ -335,65 +381,66 @@ async def main() -> int:
                     await _dom_prove_ready(page)
                     await _wait_extension_marker(page)
 
-                    # Enable real clipboard path for test pages.
-                    await page.evaluate(
-                        "() => { document.documentElement.dataset.copyOfficeFormatRealClipboard = 'true'; }"
-                    )
+                    selected_text = await _select_selector(page, case.selector)
+                    token = (selected_text.strip().splitlines() or [""])[0][:64]
+                    before_sha = dump_clipboard().get("cfhtml_bytes_sha256") or ""
 
-                    # Trigger copy via deterministic test hook.
-                    await _trigger_copy(page, case.selector, timeout_ms=int(args.timeout_ms))
+                    resp = await _chromium_send_to_active_tab(
+                        service_worker,
+                        {"type": "COPY_OFFICE_FORMAT", "mode": "html"},
+                    )
+                    if not resp or not resp.get("ok", False):
+                        err = resp.get("error") if isinstance(resp, dict) else None
+                        last_err = await page.evaluate(
+                            "() => document.documentElement?.dataset?.copyOfficeFormatLastCopyError || ''"
+                        )
+                        raise RuntimeError(f"COPY_OFFICE_FORMAT failed: {err or last_err or 'unknown error'}")
 
                     # Snapshot page-side debug state (precondition/action/postcondition artifacts).
                     page_debug = await page.evaluate(
                         """
                         () => ({
                           url: location.href,
-                          selector: document.documentElement.dataset.copyOfficeFormatTestSelector || null,
-                          selectorFound: document.documentElement.dataset.copyOfficeFormatTestSelectorFound || null,
-                          selectionLength: document.documentElement.dataset.copyOfficeFormatTestSelectionLength || null,
-                          selectionSourceDocDetected: document.documentElement.dataset.copyOfficeFormatSelectionSourceDocDetected || null,
-                          selectionSourceHtmlDetected: document.documentElement.dataset.copyOfficeFormatSelectionSourceHtmlDetected || null,
-                          selectionSourceExtractedLength: document.documentElement.dataset.copyOfficeFormatSelectionSourceExtractedLength || null,
-                          selectionSourceExtractedVia: document.documentElement.dataset.copyOfficeFormatSelectionSourceExtractedVia || null,
+                          lastStage: document.documentElement.dataset.copyOfficeFormatLastStage || null,
+                          lastClipboardWriteError: document.documentElement.dataset.copyOfficeFormatLastClipboardWriteError || null,
+                          lastBgSendError: document.documentElement.dataset.copyOfficeFormatLastBgSendError || null,
+                          lastXsltError: document.documentElement.dataset.copyOfficeFormatLastXsltError || null,
+                          wasmPreloadError: document.documentElement.dataset.copyOfficeFormatWasmPreloadError || null,
                           lastCopyError: document.documentElement.dataset.copyOfficeFormatLastCopyError || null,
+                          logs: Array.isArray(window.__cofLogs) ? window.__cofLogs.slice(-50) : null,
                         })
                         """
                     )
                     _write_json(out_dir / "page_debug.json", page_debug)
 
-                    # Pull test-bridge payload for debugging (not used as source of truth).
-                    bridge_payload = await page.evaluate(
-                        """
-                        () => {
-                            const el = document.getElementById('__copyOfficeFormatTestBridge');
-                            return el && el.value ? el.value : null;
-                        }
-                        """
-                    )
-                    if bridge_payload:
-                        (out_dir / "bridge_payload.json").write_text(str(bridge_payload), encoding="utf-8")
-
                     # Read OS clipboard and persist artifacts.
-                    clip = dump_clipboard()
+                    clip = _wait_clipboard_has(
+                        token=token,
+                        before_sha=before_sha,
+                        timeout_s=float(args.timeout_ms) / 1000.0,
+                    )
                     _write_json(out_dir / "clipboard_dump.json", clip)
                     (out_dir / "clipboard_cfhtml.txt").write_text(clip.get("cfhtml", ""), encoding="utf-8")
                     (out_dir / "clipboard_fragment.html").write_text(clip.get("fragment", ""), encoding="utf-8")
                     (out_dir / "clipboard_plain.txt").write_text(clip.get("plain_text", ""), encoding="utf-8")
+                    _write_json(out_dir / "cfhtml_validation.json", clip.get("cfhtml_validation", {}))
 
-                    # Deterministic clipboard postcondition: correct SourceURL and marker must be present.
+                    # Deterministic clipboard postcondition: selection token must be present in plain text.
                     validation = {
-                        "expected_source_url": url,
-                        "actual_source_url": clip.get("source_url", ""),
+                        "expected_token": token,
+                        "token_found_in_plain": token in str(clip.get("plain_text", "")),
                         "cfhtml_length": clip.get("cfhtml_length", 0),
                         "fragment_length": len(str(clip.get("fragment", ""))),
                     }
                     _write_json(out_dir / "clipboard_validation.json", validation)
 
-                    if validation["actual_source_url"] != url:
-                        raise RuntimeError(
-                            "Clipboard did not update for this case "
-                            f"(expected SourceURL={url}, got {validation['actual_source_url']})"
-                        )
+                    if not validation["token_found_in_plain"]:
+                        raise RuntimeError("Clipboard did not update for this case (expected token missing in plain text)")
+
+                    cf_ok = bool((clip.get("cfhtml_validation") or {}).get("ok"))
+                    if not cf_ok:
+                        errs = (clip.get("cfhtml_validation") or {}).get("errors") or []
+                        raise RuntimeError(f"Invalid CF_HTML offsets/markers: {errs}")
 
                     html_for_docx = _wrap_fragment_for_docx(str(clip.get("fragment", "")))
                     in_html = out_dir / "clipboard_for_docx.html"

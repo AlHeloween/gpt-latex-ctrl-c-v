@@ -10,6 +10,7 @@ test-results/
 
 # Rust
 rust/**/target/
+lib/rust/**/target/
 
 # Python/uv environments
 .venv/
