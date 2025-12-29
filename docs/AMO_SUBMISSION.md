@@ -10,7 +10,7 @@ Set a stable extension ID in `extension/manifest.json`:
 
 ```powershell
 uv run python tools/build_rust_wasm.py
-uv run python tools/build_firefox_xpi.py --out dist/copy-as-office-format.xpi
+uv run python tools/build_firefox_xpi.py --out dist/gpt-latex-ctrl-c-v.xpi
 ```
 
 Upload the produced `.xpi` (it is just a `.zip`) to AMO.

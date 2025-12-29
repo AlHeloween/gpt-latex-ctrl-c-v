@@ -1,6 +1,6 @@
 # Project Architecture
 
-This document provides a comprehensive overview of the "Copy as Office Format" Firefox extension architecture, including component relationships, data flows, build processes, and testing strategies.
+This document provides a comprehensive overview of the "GPT LATEX Ctrl-C Ctrl-V" Firefox extension architecture, including component relationships, data flows, build processes, and testing strategies.
 
 ## Overview
 
@@ -215,7 +215,7 @@ uv run python tools/build_chromium_extension.py
 ### Build Artifacts
 
 - `extension/wasm/tex_to_mathml.wasm`: Compiled WASM module
-- `dist/copy-as-office-format.xpi`: Firefox extension package
+- `dist/gpt-latex-ctrl-c-v.xpi`: Firefox extension package
 - `dist/chromium/`: Chromium MV3 extension build (for testing)
 
 ## Testing Strategy

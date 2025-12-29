@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Copy as Office Format",
+  "name": "GPT LATEX Ctrl-C Ctrl-V",
   "version": "0.2.0",
   "description": "Copy browser selections to clipboard in Office-compatible format, preserving formatting and converting LaTeX formulas to Microsoft Equation (OMML) format.",
   "permissions": ["contextMenus", "activeTab", "clipboardWrite", "tabs", "offscreen"],

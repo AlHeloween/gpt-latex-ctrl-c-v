@@ -116,7 +116,7 @@ flowchart TB
 
   subgraph Artifacts["Build Artifacts"]
     WASM["extension/wasm/tex_to_mathml.wasm"]
-    XPI["dist/copy-as-office-format.xpi"]
+    XPI["dist/gpt-latex-ctrl-c-v.xpi"]
     CHR["dist/chromium/\n(Chromium MV3 build)"]
   end
 
@@ -157,7 +157,7 @@ sequenceDiagram
   CJS-->>Dev: Size check (must be <= 20KB)
   Dev->>BFX: uv run python tools/build_firefox_xpi.py
   BFX->>XPI: Package extension/ into ZIP
-  XPI-->>Dev: dist/copy-as-office-format.xpi
+  XPI-->>Dev: dist/gpt-latex-ctrl-c-v.xpi
 ```
 
 ## Testing Workflow

@@ -4,11 +4,11 @@ const isChromeCallbackApi = !!globalThis.chrome && !globalThis.browser;
 // Debug mode - set to false in production
 const DEBUG = false;
 const log = DEBUG
-  ? console.log.bind(console, "[Copy as Office Format Background]")
+  ? console.log.bind(console, "[GPT LATEX Ctrl-C Ctrl-V Background]")
   : () => {};
 const logError = console.error.bind(
   console,
-  "[Copy as Office Format Background]",
+  "[GPT LATEX Ctrl-C Ctrl-V Background]",
 );
 
 function chromeCall(fn, ...args) {
@@ -167,21 +167,22 @@ async function createContextMenu() {
   try {
     // Try to remove existing menu first (in case of reload)
     try {
-      await contextMenusRemove("copy-office-format");
-      await contextMenusRemove("copy-office-format-from-markdown");
+      await contextMenusRemove("gpt-copy-paster");
+      await contextMenusRemove("gpt-copy-paster-from-markdown");
       await contextMenusRemove("copy-as-markdown");
+      await contextMenusRemove("extract-selected-html");
     } catch (e) {
       // Menu doesn't exist, that's fine
     }
 
     await contextMenusCreate({
-      id: "copy-office-format",
+      id: "gpt-copy-paster",
       title: "Copy as Office Format",
       contexts: ["selection"],
     });
 
     await contextMenusCreate({
-      id: "copy-office-format-from-markdown",
+      id: "gpt-copy-paster-from-markdown",
       title: "Copy as Office Format (Markdown selection)",
       contexts: ["selection"],
     });
@@ -189,6 +190,12 @@ async function createContextMenu() {
     await contextMenusCreate({
       id: "copy-as-markdown",
       title: "Copy as Markdown",
+      contexts: ["selection"],
+    });
+
+    await contextMenusCreate({
+      id: "extract-selected-html",
+      title: "Extract selected HTML",
       contexts: ["selection"],
     });
     log("Context menu created");
@@ -256,7 +263,7 @@ browserApi.contextMenus.onClicked.addListener((info, tab) => {
   log("   Tab ID:", tab ? tab.id : "NO TAB");
   log("   Tab URL:", tab ? tab.url : "NO TAB");
 
-  if (info.menuItemId === "copy-office-format") {
+  if (info.menuItemId === "gpt-copy-paster") {
     // Check if tab is valid before sending message
     if (!tab || !tab.id) {
       logError("❌ Invalid tab - cannot send message");
@@ -281,7 +288,7 @@ browserApi.contextMenus.onClicked.addListener((info, tab) => {
         logError("   - Tab URL not matching manifest patterns");
         logError("   - Extension not active on this page");
       });
-  } else if (info.menuItemId === "copy-office-format-from-markdown") {
+  } else if (info.menuItemId === "gpt-copy-paster-from-markdown") {
     if (!tab || !tab.id) return;
     const opts =
       typeof info?.frameId === "number" ? { frameId: info.frameId } : undefined;
@@ -296,6 +303,13 @@ browserApi.contextMenus.onClicked.addListener((info, tab) => {
       typeof info?.frameId === "number" ? { frameId: info.frameId } : undefined;
     tabsSendMessage(tab.id, { type: "COPY_AS_MARKDOWN" }, opts).catch((e) =>
       logError("COPY_AS_MARKDOWN failed:", e),
+    );
+  } else if (info.menuItemId === "extract-selected-html") {
+    if (!tab || !tab.id) return;
+    const opts =
+      typeof info?.frameId === "number" ? { frameId: info.frameId } : undefined;
+    tabsSendMessage(tab.id, { type: "EXTRACT_SELECTED_HTML" }, opts).catch((e) =>
+      logError("EXTRACT_SELECTED_HTML failed:", e),
     );
   } else {
     log("⚠️ Unknown menu item clicked:", info.menuItemId);

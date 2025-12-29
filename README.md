@@ -1,4 +1,4 @@
-# Copy as Office Format
+# GPT LATEX Ctrl-C Ctrl-V
 
 Firefox extension that copies your current selection as **Office-friendly HTML** and converts math into **real Word equations** (MathML -> OMML on paste).
 
@@ -8,6 +8,7 @@ It also supports:
 
 - **Copy as Markdown** (writes Markdown to the clipboard)
 - **Copy as Office Format (Markdown selection)** (renders selected Markdown -> HTML -> Office HTML)
+- **Extract selected HTML** (processes HTML through normalization pipeline and extracts formatted plain text)
 
 ## Repository layout
 
@@ -42,7 +43,7 @@ AMO expects a ZIP (or XPI) with `manifest.json` at the archive root.
 
 ```powershell
 uv run python tools/build_rust_wasm.py
-uv run python tools/build_firefox_xpi.py --out dist/copy-as-office-format.xpi
+uv run python tools/build_firefox_xpi.py --out dist/gpt-latex-ctrl-c-v.xpi
 ```
 
 ## Privacy

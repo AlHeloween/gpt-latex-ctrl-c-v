@@ -135,8 +135,9 @@ Fail fast with evidence: On failure, provide reproduction steps, artifacts list,
 ## Extension Features (Current)
 
 - Copy modes:
-  - Office HTML: "Copy as Office Format" (default)
-  - Office from Markdown: "Copy as Office Format (Markdown selection)"
+  - Office HTML: "Copy as Office Format" (default) - Extension name: GPT LATEX Ctrl-C Ctrl-V
+  - Office from Markdown: "Copy as Office Format (Markdown selection)" - Extension name: GPT LATEX Ctrl-C Ctrl-V
+  - Extract selected HTML: processes HTML through normalization and extracts formatted plain text - Extension name: GPT LATEX Ctrl-C Ctrl-V
   - Markdown export: "Copy as Markdown"
 - Clipboard HTML is provided to the browser as a fragment `text/html` payload; the browser will wrap it into OS-native formats (e.g., Windows CF_HTML) when writing to the clipboard.
 - TeX->MathML is performed via Rust/WASM in the content script (no external renderer fallback).

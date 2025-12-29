@@ -14,7 +14,7 @@
       if (ds) ds[k] = toStr(v);
       if (String(k || "").toLowerCase().includes("error")) {
         // Console is an inspectable artifact in tests and user debugging.
-        console.error("[Copy as Office Format]", entry.k, entry.v);
+        console.error("[GPT LATEX Ctrl-C Ctrl-V]", entry.k, entry.v);
       }
     } catch (e) {
       globalThis.__cofDiagInternalError = toStr(e);

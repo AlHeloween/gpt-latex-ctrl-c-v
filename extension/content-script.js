@@ -81,6 +81,33 @@
     return true;
   }
 
+  async function extractSelectedHtml() {
+    const got = selection.getSelectionHtmlAndText();
+    const html = got.html || "";
+    if (!String(html || "").trim()) throw new Error("no selection");
+
+    diag("extractSelectedHtmlLastStage", "wasm-normalize");
+    const w = await wasm.load();
+    // Process HTML through the same normalization pipeline as Office format
+    const normalizedHtml = wasm.call1(w, "html_to_office", html);
+
+    diag("extractSelectedHtmlLastStage", "extract-text");
+    // Extract formatted plain text from normalized HTML
+    // Use innerText which preserves formatting (line breaks from block elements)
+    const tempDiv = document.createElement("div");
+    tempDiv.innerHTML = normalizedHtml;
+    let formattedText = tempDiv.innerText || tempDiv.textContent || "";
+    // Clean up: normalize whitespace but preserve line breaks
+    formattedText = formattedText.replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+
+    diag("extractSelectedHtmlLastStage", "clipboard");
+    const r = await clipboard.writeText(formattedText);
+    if (!r?.ok) throw new Error(String(r?.error || "Clipboard writeText unavailable."));
+
+    diag("extractSelectedHtmlLastStage", "done");
+    return true;
+  }
+
   async function handleCopyRequest(mode) {
     if (mode === "markdown-export") return copyAsMarkdown();
     if (mode === "markdown") return copyOfficeFromMarkdownSelection();
@@ -132,6 +159,22 @@
                 `${globalThis.CONFIG?.MESSAGES?.COPY_FAILED || "Copy failed."} ${m}`,
                 true,
               );
+              sendResponse?.({ ok: false, error: String(e?.message || e) });
+            }),
+          true
+        );
+
+      if (t === "EXTRACT_SELECTED_HTML")
+        return (
+          extractSelectedHtml()
+            .then(() => {
+              ui.toast("Extracted formatted text to clipboard.", false);
+              sendResponse?.({ ok: true });
+            })
+            .catch((e) => {
+              const m = String(e?.message || e || "").trim() || "Extraction failed.";
+              diag("extractSelectedHtmlLastError", m);
+              ui.toast(`Extraction failed. ${m}`, true);
               sendResponse?.({ ok: false, error: String(e?.message || e) });
             }),
           true
