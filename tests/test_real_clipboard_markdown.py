@@ -28,8 +28,8 @@ from pathlib import Path
 
 from playwright.async_api import async_playwright
 
-from lib.tools.build_chromium_extension import build as build_chromium_extension  # type: ignore
-from lib.tools.win_clipboard_dump import dump_clipboard  # type: ignore
+from tools.build_chromium_extension import build as build_chromium_extension  # type: ignore
+from tools.win_clipboard_dump import dump_clipboard  # type: ignore
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]

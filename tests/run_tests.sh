@@ -17,11 +17,11 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
 echo "Building Rust WASM (tex_to_mathml.wasm)..."
-uv run python ../lib/tools/build_rust_wasm.py
+uv run python ../tools/build_rust_wasm.py
 
 echo ""
 echo "Checking JS size budgets..."
-uv run python ../lib/tools/check_js_size.py
+uv run python ../tools/check_js_size.py
 
 echo ""
 uv run python test_automated.py "$@"
@@ -79,4 +79,4 @@ fi
 
 echo ""
 echo "Cleaning test_results to keep only the most recent outputs..."
-uv run python ../lib/tools/cleanup_test_results.py
+uv run python ../tools/cleanup_test_results.py

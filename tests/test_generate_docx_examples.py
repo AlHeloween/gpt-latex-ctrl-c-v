@@ -28,7 +28,7 @@ import threading
 
 from playwright.async_api import async_playwright
 
-from lib.tools.build_chromium_extension import build as build_chromium_extension  # type: ignore
+from tools.build_chromium_extension import build as build_chromium_extension  # type: ignore
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -263,7 +263,7 @@ async def main() -> int:
         print("SKIP: generating docx via real clipboard is Windows-only.")
         return 0
 
-    from lib.tools.win_clipboard_dump import dump_clipboard  # type: ignore
+    from tools.win_clipboard_dump import dump_clipboard  # type: ignore
 
     examples_dir = Path(args.examples_dir)
     if not examples_dir.exists():

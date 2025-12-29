@@ -21,8 +21,8 @@ from dataclasses import dataclass
 from pathlib import Path
 import re
 
-from lib.tools.build_chromium_extension import build as build_chromium_extension  # type: ignore
-from lib.tools.capture_extension_payload import run as capture_payload  # type: ignore
+from tools.build_chromium_extension import build as build_chromium_extension  # type: ignore
+from tools.capture_extension_payload import run as capture_payload  # type: ignore
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -125,7 +125,7 @@ async def _capture_case_payload(case: ExampleCase, out_payload: Path) -> None:
 
 def _word_paste_case(*, payload_json: Path, out_dir: Path, visible: bool) -> dict[str, bool]:
     # Import Windows-only tooling lazily so this module can be imported on non-Windows.
-    from lib.tools.word_paste_probe import (  # type: ignore
+    from tools.word_paste_probe import (  # type: ignore
         extract_document_xml,
         normalize_cfhtml_utf8,
         set_clipboard_cfhtml,

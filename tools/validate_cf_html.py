@@ -3,9 +3,9 @@ Validate a CF_HTML ("HTML Format") payload on disk.
 
 Usage examples:
   - Validate a binary capture from WinHex:
-      uv run python lib/tools/validate_cf_html.py --in test.bin
+      uv run python tools/validate_cf_html.py --in test.bin
   - Validate a text file containing CF_HTML:
-      uv run python lib/tools/validate_cf_html.py --in clipboard_cfhtml.txt
+      uv run python tools/validate_cf_html.py --in clipboard_cfhtml.txt
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ import argparse
 import json
 from pathlib import Path
 
-from lib.tools.cf_html import sha256_hex, validate_cf_html_bytes
+from tools.cf_html import sha256_hex, validate_cf_html_bytes
 
 
 def main() -> int:

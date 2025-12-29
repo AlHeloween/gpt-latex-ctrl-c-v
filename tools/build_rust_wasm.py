@@ -2,12 +2,12 @@
 Build the Rust -> WebAssembly core converter and write it into extension/wasm/ for extension use.
 
 Determinism:
-- Uses Cargo.lock in lib/rust/tex_to_mathml_wasm/ (pinned crate versions).
+- Uses Cargo.lock in rust/tex_to_mathml_wasm/ (pinned crate versions).
 - Uses explicit wasm32-unknown-unknown target.
 
 Usage:
-  uv run python lib/tools/build_rust_wasm.py
-  uv run python lib/tools/build_rust_wasm.py --debug
+  uv run python tools/build_rust_wasm.py
+  uv run python tools/build_rust_wasm.py --debug
 """
 
 from __future__ import annotations
@@ -18,8 +18,8 @@ import subprocess
 from pathlib import Path
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-CRATE_DIR = PROJECT_ROOT / "lib" / "rust" / "tex_to_mathml_wasm"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+CRATE_DIR = PROJECT_ROOT / "rust" / "tex_to_mathml_wasm"
 OUT_DIR = PROJECT_ROOT / "extension" / "wasm"
 
 

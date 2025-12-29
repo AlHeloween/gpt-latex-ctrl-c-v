@@ -70,7 +70,7 @@ class AutomatedExtensionTester:
 
     def _ensure_chromium_extension(self) -> Path:
         """Build the Chromium MV3 extension dir (deterministic; ensures latest sources are copied)."""
-        from lib.tools.build_chromium_extension import build  # type: ignore
+        from tools.build_chromium_extension import build  # type: ignore
 
         built = build(CHROMIUM_EXTENSION_PATH)
         return built
@@ -329,7 +329,7 @@ class AutomatedExtensionTester:
             verification["error"] = "Windows-only clipboard verification skipped"
             return verification
 
-        from lib.tools.win_clipboard_dump import dump_clipboard  # type: ignore
+        from tools.win_clipboard_dump import dump_clipboard  # type: ignore
 
         deadline_s = 15.0
         poll_s = 0.2
@@ -408,7 +408,7 @@ class AutomatedExtensionTester:
             before_sha = ""
             if os.name == "nt":
                 try:
-                    from lib.tools.win_clipboard_dump import dump_clipboard  # type: ignore
+                    from tools.win_clipboard_dump import dump_clipboard  # type: ignore
 
                     before_sha = dump_clipboard().get("cfhtml_bytes_sha256") or ""
                 except Exception:

@@ -3,7 +3,7 @@ Real-life clipboard verification:
 
 - Inputs: examples/*.html only (no fixtures in tests/).
 - Action: load each example in Chromium with the extension, trigger copy, read *OS clipboard* (Windows),
-  and generate a .docx from the clipboard HTML using lib/rust/docx_from_html.
+  and generate a .docx from the clipboard HTML using rust/docx_from_html.
 - Outputs: test_results/real_clipboard/** (JSON + .docx) for inspection.
 
 Notes:
@@ -29,8 +29,8 @@ import threading
 
 from playwright.async_api import async_playwright
 
-from lib.tools.build_chromium_extension import build as build_chromium_extension  # type: ignore
-from lib.tools.win_clipboard_dump import dump_clipboard  # type: ignore
+from tools.build_chromium_extension import build as build_chromium_extension  # type: ignore
+from tools.win_clipboard_dump import dump_clipboard  # type: ignore
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -288,7 +288,7 @@ async def main() -> int:
     word_available = True
     word_error: str | None = None
     try:
-        from lib.tools.word_paste_probe import (  # type: ignore
+        from tools.word_paste_probe import (  # type: ignore
             extract_document_xml,
             set_clipboard_cfhtml,
             word_paste_to_docx,

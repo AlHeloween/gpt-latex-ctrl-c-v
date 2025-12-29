@@ -22,7 +22,7 @@ from typing import Any
 import ctypes
 from ctypes import wintypes
 
-from lib.tools.cf_html import parse_offsets_from_bytes, validate_cf_html_bytes  # type: ignore
+from tools.cf_html import parse_offsets_from_bytes, validate_cf_html_bytes  # type: ignore
 
 GMEM_MOVEABLE = 0x0002
 CF_UNICODETEXT = 13

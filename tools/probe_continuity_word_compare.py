@@ -23,15 +23,15 @@ from dataclasses import dataclass
 from html.parser import HTMLParser
 from pathlib import Path
 
-from lib.tools.capture_extension_payload import run as capture_payload  # type: ignore
-from lib.tools.word_paste_probe import (  # type: ignore
+from tools.capture_extension_payload import run as capture_payload  # type: ignore
+from tools.word_paste_probe import (  # type: ignore
     extract_document_xml,
     set_clipboard_cfhtml,
     word_paste_to_docx,
 )
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _write_json(path: Path, data: object) -> None:

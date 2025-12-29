@@ -4,8 +4,8 @@
 
 - Extension sources: `extension/` (Firefox MV2; Chromium test build: `dist/chromium/`).
 - Tests are driven only by `examples/*.html` (no HTML fixtures under `tests/`).
-- Runners/helpers: `tests/`, `lib/tools/`; Rust/WASM: `lib/rust/`; outputs: `test_results/` and `artifacts/` (debug only).
-- Conversion core: `lib/rust/tex_to_mathml_wasm/` (TeX->MathML + HTML<->Markdown + HTML->Office normalization), built into `extension/wasm/tex_to_mathml.wasm`.
+- Runners/helpers: `tests/`, `tools/`; Rust/WASM: `rust/`; outputs: `test_results/` and `artifacts/` (debug only).
+- Conversion core: `rust/tex_to_mathml_wasm/` (TeX->MathML + HTML<->Markdown + HTML->Office normalization), built into `extension/wasm/tex_to_mathml.wasm`.
 
 ## Build, Test, and Development Commands (uv)
 
@@ -16,24 +16,24 @@
 - Windows (real clipboard -> docx artifacts): `uv run python tests/test_real_clipboard_docx.py --out-root test_results/real_clipboard`
 - Windows (copy-as-markdown -> clipboard text artifacts): `uv run python tests/test_real_clipboard_markdown.py --out-root test_results/real_clipboard_markdown`
 - Optional (Windows): `uv run python tests/test_word_examples.py`
-- Rebuild WASM after Rust changes: `uv run python lib/tools/build_rust_wasm.py`
-- Enforce JS size budget: `uv run python lib/tools/check_js_size.py` (hard: `extension/content-script.js` <= 20KB)
-- Clean outputs before sharing/debugging: `uv run python lib/tools/cleanup_test_results.py`
-- Validate a captured Windows CF_HTML payload: `uv run python lib/tools/validate_cf_html.py --in test.bin`
+- Rebuild WASM after Rust changes: `uv run python tools/build_rust_wasm.py`
+- Enforce JS size budget: `uv run python tools/check_js_size.py` (hard: `extension/content-script.js` <= 20KB)
+- Clean outputs before sharing/debugging: `uv run python tools/cleanup_test_results.py`
+- Validate a captured Windows CF_HTML payload: `uv run python tools/validate_cf_html.py --in test.bin`
 
 ## Standard Procedure (Required)
 
 - After code changes: run `uv run python tests/test_automated.py` and include the pass/fail summary in PR notes.
-- If Rust changed: run `uv run python lib/tools/build_rust_wasm.py` (WASM must be up to date).
-- If JS changed: run `uv run python lib/tools/check_js_size.py` (content script must stay <= 20KB).
-- After test runs: run `uv run python lib/tools/cleanup_test_results.py` so `test_results/` only contains the most recent outputs.
+- If Rust changed: run `uv run python tools/build_rust_wasm.py` (WASM must be up to date).
+- If JS changed: run `uv run python tools/check_js_size.py` (content script must stay <= 20KB).
+- After test runs: run `uv run python tools/cleanup_test_results.py` so `test_results/` only contains the most recent outputs.
 - If debugging Word truncation/CF_HTML: run `uv run python tests/test_real_clipboard_docx.py --out-root test_results/real_clipboard` and inspect `cfhtml_validation.json` per case.
 
 ## Coding Style & Naming Conventions
 
 - JavaScript: 2-space indent, prefer `const`/`let`, keep `DEBUG = false` by default.
 - Tests: Python follows PEP 8; examples in `examples/*.html`, runners in `tests/*.py`.
-- Rust/WASM: keep exports stable + deterministic; if `api_version()` changes, update `extension/content-script.js` to match and rebuild via `uv run python lib/tools/build_rust_wasm.py`.
+- Rust/WASM: keep exports stable + deterministic; if `api_version()` changes, update `extension/content-script.js` to match and rebuild via `uv run python tools/build_rust_wasm.py`.
 - HTML parsing for sanitizing uses Servo's `markup5ever_rcdom` (via `html5ever`); avoid custom TreeSink implementations.
 
 ## Deterministic Automation Rules (Hard)

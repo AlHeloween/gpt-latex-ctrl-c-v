@@ -23,7 +23,7 @@ from typing import Any
 from playwright.async_api import async_playwright
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 class _QuietHandler(SimpleHTTPRequestHandler):
@@ -126,11 +126,11 @@ async def run(
     if os.name != "nt":
         raise RuntimeError("capture_extension_payload is Windows-only (needs OS clipboard access)")
 
-    from lib.tools.win_clipboard_dump import dump_clipboard  # type: ignore
+    from tools.win_clipboard_dump import dump_clipboard  # type: ignore
 
     # Always rebuild the Chromium extension bundle so we never test a stale dist/.
     chromium_dir = PROJECT_ROOT / "dist" / "chromium"
-    from lib.tools.build_chromium_extension import build  # type: ignore
+    from tools.build_chromium_extension import build  # type: ignore
 
     build(chromium_dir)
 

@@ -233,7 +233,7 @@ def main() -> int:
     parser.add_argument(
         "--payload-json",
         default=str(Path("artifacts") / "extension_payload.json"),
-        help="JSON from lib/tools/capture_extension_payload.py (contains lastClipboard).",
+        help="JSON from tools/capture_extension_payload.py (contains lastClipboard).",
     )
     parser.add_argument("--out-dir", default=str(Path("artifacts") / "word_paste"))
     parser.add_argument("--visible", action="store_true", help="Show Word UI while pasting.")

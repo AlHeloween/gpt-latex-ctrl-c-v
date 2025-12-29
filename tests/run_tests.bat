@@ -11,7 +11,7 @@ uv run python --version
 
 echo.
 echo Building Rust WASM (tex_to_mathml.wasm)...
-uv run python ..\lib\tools\build_rust_wasm.py
+uv run python ..\tools\build_rust_wasm.py
 if %ERRORLEVEL% NEQ 0 (
     echo ? Rust WASM build failed.
     popd
@@ -20,7 +20,7 @@ if %ERRORLEVEL% NEQ 0 (
 
 echo.
 echo Checking JS size budgets...
-uv run python ..\lib\tools\check_js_size.py
+uv run python ..\tools\check_js_size.py
 if %ERRORLEVEL% NEQ 0 (
     echo ? JS size budget failed.
     popd
@@ -59,7 +59,7 @@ set REAL_MD_ERRORLEVEL=%ERRORLEVEL%
 
 echo.
 echo Cleaning test_results to keep only the most recent outputs...
-uv run python ..\lib\tools\cleanup_test_results.py
+uv run python ..\tools\cleanup_test_results.py
 
 if %TESTS_ERRORLEVEL% EQU 0 (
     echo.

@@ -9,8 +9,8 @@ Set a stable extension ID in `extension/manifest.json`:
 ## 2) Build a clean package (manifest at archive root)
 
 ```powershell
-uv run python lib/tools/build_rust_wasm.py
-uv run python lib/tools/build_firefox_xpi.py --out dist/copy-as-office-format.xpi
+uv run python tools/build_rust_wasm.py
+uv run python tools/build_firefox_xpi.py --out dist/copy-as-office-format.xpi
 ```
 
 Upload the produced `.xpi` (it is just a `.zip`) to AMO.

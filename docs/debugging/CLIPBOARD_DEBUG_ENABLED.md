@@ -14,13 +14,13 @@ This project intentionally avoids the browser’s native “copy selection” pi
 2. Dump OS clipboard formats + extracted HTML fragment:
 
 ```powershell
-uv run python lib/tools/win_clipboard_dump.py --out-dir artifacts/clipboard_dump
+uv run python tools/win_clipboard_dump.py --out-dir artifacts/clipboard_dump
 ```
 
 3. Validate a captured CF_HTML payload (offsets + fragment markers):
 
 ```powershell
-uv run python lib/tools/validate_cf_html.py --in test.bin
+uv run python tools/validate_cf_html.py --in test.bin
 ```
 
 ## Deterministic Repro With Artifacts (Recommended)
