@@ -123,12 +123,12 @@ def _discover_examples(examples_dir: Path) -> list[ExampleCase]:
 
 
 def _build_docx_tool() -> Path:
-    manifest = PROJECT_ROOT / "lib" / "rust" / "docx_from_html" / "Cargo.toml"
-    out_dir = PROJECT_ROOT / "lib" / "rust" / "docx_from_html" / "target" / "release"
+    manifest = PROJECT_ROOT  / "rust" / "docx_from_html" / "Cargo.toml"
+    out_dir = PROJECT_ROOT  / "rust" / "docx_from_html" / "target" / "release"
     exe = out_dir / ("docx_from_html.exe" if os.name == "nt" else "docx_from_html")
 
     def newest_source_mtime() -> float:
-        src_dir = PROJECT_ROOT / "lib" / "rust" / "docx_from_html" / "src"
+        src_dir = PROJECT_ROOT  / "rust" / "docx_from_html" / "src"
         mtimes = [manifest.stat().st_mtime]
         for p in src_dir.rglob("*.rs"):
             try:
