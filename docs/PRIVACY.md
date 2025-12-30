@@ -8,7 +8,8 @@
 
 - No account creation.
 - No telemetry is intentionally collected.
-- No copied content is intentionally transmitted to any remote server.
+- Translation feature: When translation is enabled, selected content may be sent to third-party translation services (Google Translate, Microsoft Translator, OpenAI ChatGPT, Google Gemini, Pollinations, or custom API endpoints) based on your configuration. Content is only sent when you explicitly copy with translation enabled.
+- No copied content is transmitted to remote servers unless translation is enabled and configured by the user.
 
 ## Permissions rationale
 
@@ -22,4 +23,6 @@ The extension does not intentionally persist copied content. Test-only bridges (
 
 ## Contact
 
-Replace this section with your support/contact details before submitting to AMO.
+For support, bug reports, or questions, please visit:
+- **GitHub Issues**: https://github.com/alheloween/gpt-latex-ctrl-c-v/issues
+- **Homepage**: https://github.com/alheloween/gpt-latex-ctrl-c-v

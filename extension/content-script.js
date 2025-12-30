@@ -7,6 +7,10 @@
   const xslt = cof.xslt;
   const clipboard = cof.clipboard;
   const ui = cof.ui;
+  const storage = cof.storage;
+  const anchor = cof.anchor;
+  const analysis = cof.analysis;
+  const translate = cof.translate;
   const root = core.root;
 
   async function copyOfficeFromHtmlSelection() {
@@ -93,9 +97,10 @@
 
     diag("extractSelectedHtmlLastStage", "extract-text");
     // Extract formatted plain text from normalized HTML
-    // Use innerText which preserves formatting (line breaks from block elements)
-    const tempDiv = document.createElement("div");
-    tempDiv.innerHTML = normalizedHtml;
+    // Use DOMParser for safer HTML parsing (normalizedHtml is already sanitized by WASM)
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(normalizedHtml, "text/html");
+    const tempDiv = doc.body || doc.documentElement;
     let formattedText = tempDiv.innerText || tempDiv.textContent || "";
     // Clean up: normalize whitespace but preserve line breaks
     formattedText = formattedText.replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
@@ -108,10 +113,123 @@
     return true;
   }
 
+  async function handleCopyWithTranslation() {
+    try {
+      const config = await storage.getConfig();
+      if (!config.translation?.enabled || !config.keyboard?.interceptCopy) {
+        return false; // Translation not enabled or interception disabled
+      }
+
+      const got = selection.getSelectionHtmlAndText();
+      const html = got.html || "";
+      const text = got.text || "";
+      if (!String(text).trim()) return false;
+
+      diag("translationCopyLastStage", "anchor");
+      const { html: anchoredHtml, anchors } = anchor.anchorFormulasAndCode(html);
+
+      diag("translationCopyLastStage", "analyze");
+      const analysisResult = analysis.analyzeContent(anchoredHtml);
+
+      diag("translationCopyLastStage", "translate");
+      const targetLang = config.translation?.defaultLanguage || "en";
+      const service = config.translation?.service || "pollinations";
+      const translatedText = await translate.translate(
+        anchoredHtml,
+        targetLang,
+        service,
+        config,
+        analysisResult.embedding,
+        analysisResult.frequency,
+        anchors
+      );
+
+      diag("translationCopyLastStage", "restore-anchors");
+      let finalHtml = translatedText;
+      if (config.translation?.translateFormulas && ["chatgpt", "gemini", "pollinations", "custom"].includes(service)) {
+        const formulas = anchor.extractAnchoredFormulas(anchors);
+        const translatedFormulas = await translate.translateFormulas(
+          formulas,
+          service,
+          config.apiKeys[service] || "",
+          targetLang,
+          config.customApi
+        );
+        finalHtml = anchor.restoreAnchors(translatedText, anchors, true, translatedFormulas);
+      } else {
+        finalHtml = anchor.restoreAnchors(translatedText, anchors, false);
+      }
+
+      diag("translationCopyLastStage", "process-wasm");
+      const w = await wasm.load();
+      const withMath = wasm.call1(w, "html_to_office_with_mathml", finalHtml);
+
+      diag("translationCopyLastStage", "xslt");
+      const wrappedHtml = await xslt.convertMathmlToOmmlInHtmlString(withMath);
+
+      diag("translationCopyLastStage", "clipboard");
+      const r = await clipboard.writeHtml({ html: wrappedHtml, text });
+      if (!r?.ok) throw new Error(String(r?.error || "Clipboard write unavailable."));
+
+      diag("translationCopyLastStage", "done");
+      return true;
+    } catch (e) {
+      diag("translationCopyError", String(e?.message || e));
+      return false; // Return false to allow normal copy
+    }
+  }
+
   async function handleCopyRequest(mode) {
     if (mode === "markdown-export") return copyAsMarkdown();
     if (mode === "markdown") return copyOfficeFromMarkdownSelection();
     return copyOfficeFromHtmlSelection();
+  }
+
+  async function handleCopyInterception(event) {
+    // Check if Ctrl-C (or Cmd-C on Mac)
+    const isModifierPressed = event.ctrlKey || event.metaKey;
+    const isC = event.key === "c" || event.keyCode === 67;
+    const isShiftPressed = event.shiftKey;
+
+    if (!isModifierPressed || !isC) return;
+
+    // Bypass if Shift is also pressed (Shift+Ctrl-C for normal copy)
+    if (isShiftPressed) return;
+
+    try {
+      // Check if interception is enabled
+      const config = await storage.getConfig();
+      if (!config.keyboard?.interceptCopy) return;
+      if (!config.translation?.enabled) return;
+
+      // Prevent default copy
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+
+      // Handle translation copy
+      const handled = await handleCopyWithTranslation();
+      if (!handled) {
+        // If translation failed, do normal copy
+        const sel = window.getSelection();
+        if (sel && sel.toString()) {
+          document.execCommand("copy");
+        }
+      } else {
+        ui.toast("Translated content copied to clipboard.", false);
+      }
+    } catch (e) {
+      diag("copyInterceptionError", String(e));
+      // Fallback to normal copy on error
+      try {
+        const sel = window.getSelection();
+        if (sel && sel.toString()) {
+          document.execCommand("copy");
+        }
+      } catch (e2) {
+        diag("copyInterceptionFallbackError", String(e2));
+      }
+    }
   }
 
   const browserApi = core.browserApi;
@@ -182,4 +300,7 @@
       return false;
     });
   }
+
+  // Set up copy interception
+  document.addEventListener("keydown", handleCopyInterception, true);
 })();

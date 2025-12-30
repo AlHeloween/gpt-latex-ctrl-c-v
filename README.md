@@ -9,6 +9,9 @@ It also supports:
 - **Copy as Markdown** (writes Markdown to the clipboard)
 - **Copy as Office Format (Markdown selection)** (renders selected Markdown -> HTML -> Office HTML)
 - **Extract selected HTML** (processes HTML through normalization pipeline and extracts formatted plain text)
+- **Translation on Copy** (Ctrl-C) - Translate content before copying using multiple services (Google, Microsoft, ChatGPT, Gemini, Pollinations, Custom API)
+- **Formula/Code Protection** - Automatically protects formulas and code from translation
+- **Content Analysis** - Semantic embeddings and word frequency analysis for better translation
 
 ## Repository layout
 

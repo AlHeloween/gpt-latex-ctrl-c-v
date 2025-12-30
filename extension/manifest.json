@@ -3,7 +3,7 @@
   "name": "GPT LATEX Ctrl-C Ctrl-V",
   "version": "0.2.0",
   "description": "Copy browser selections to clipboard in Office-compatible format, preserving formatting and converting LaTeX formulas to Microsoft Equation (OMML) format.",
-  "permissions": ["contextMenus", "activeTab", "clipboardWrite"],
+  "permissions": ["contextMenus", "activeTab", "clipboardWrite", "storage"],
   "background": { "scripts": ["background.js"], "persistent": false },
   "content_scripts": [
     {
@@ -17,6 +17,10 @@
         "lib/cof-xslt.js",
         "lib/cof-clipboard.js",
         "lib/cof-ui.js",
+        "lib/cof-storage.js",
+        "lib/cof-anchor.js",
+        "lib/cof-analysis.js",
+        "lib/cof-translate.js",
         "content-script.js"
       ],
       "run_at": "document_idle",
@@ -28,12 +32,22 @@
     "wasm/tex_to_mathml.wasm"
   ],
   "icons": { "48": "icons/icon48.png", "96": "icons/icon96.png" },
+  "browser_action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "48": "icons/icon48.png",
+      "96": "icons/icon96.png"
+    }
+  },
   "homepage_url": "https://github.com/alheloween/gpt-latex-ctrl-c-v",
-  "support_url": "https://github.com/alheloween/gpt-latex-ctrl-c-v/issues",
+  "options_ui": {
+    "page": "options.html",
+    "browser_style": true
+  },
   "browser_specific_settings": {
     "gecko": {
-      "id": "gpt-latex-ctrl-c-v@example",
-      "strict_min_version": "109.0",
+      "id": "gpt-latex-ctrl-c-v@alheloween",
+      "strict_min_version": "142.0",
       "data_collection_permissions": {
         "required": ["none"],
         "optional": []
