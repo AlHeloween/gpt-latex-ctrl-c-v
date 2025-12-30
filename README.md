@@ -23,10 +23,35 @@ It also supports:
 
 ## Quick start (dev)
 
-```powershell
-uv sync
-uv run playwright install chromium
-.\tests\run_tests.bat
+### Initialize Development Environment
+
+**Windows:**
+```cmd
+tools\init.cmd
+```
+
+**Unix/Linux/Mac:**
+```bash
+chmod +x tools/init.sh
+./tools/init.sh
+```
+
+This will:
+- Check and install Python dependencies (`uv sync`)
+- Install Playwright browsers
+- Verify build tools
+- Optionally build WASM module (if Rust is installed)
+
+### Run Tests
+
+**Windows:**
+```cmd
+tests\run_tests.bat
+```
+
+**Unix/Linux/Mac:**
+```bash
+./tests/run_tests.sh
 ```
 
 `tests/run_tests.*` does not write persistent artifacts by default.
