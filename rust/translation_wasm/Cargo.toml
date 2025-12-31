@@ -1,0 +1,41 @@
+[package]
+name = "translation_wasm"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wasm-bindgen = "=0.2.92"
+wasm-bindgen-futures = "=0.4.42"
+web-sys = { version = "=0.3.69", features = [
+    "Window",
+    "Request",
+    "RequestInit",
+    "RequestMode",
+    "RequestCredentials",
+    "Response",
+    "Headers",
+    "IdbDatabase",
+    "IdbOpenDbRequest",
+    "IdbTransaction",
+    "IdbTransactionMode",
+    "IdbObjectStore",
+    "IdbRequest",
+    "IdbRequestReadyState",
+    "IdbCursor",
+    "IdbCursorDirection",
+    "IdbKeyRange",
+    "console",
+    "XmlHttpRequest",
+] }
+js-sys = "=0.3.69"
+serde = { version = "=1.0.203", features = ["derive"] }
+serde-wasm-bindgen = "=0.6.3"
+serde_json = "=1.0.117"
+html5ever = "=0.36.1"
+markup5ever_rcdom = "=0.36.0"
+regex = "=1.10.4"
+lazy_static = "=1.5.0"
+

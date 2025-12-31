@@ -207,7 +207,8 @@
       try {
         const data = JSON.parse(responseText);
         return data.text || data.result || data.content || data.response || responseText;
-      } catch {
+      } catch (e) {
+        diag("translateParseError", String(e?.message || e || ""));
         // If not JSON, return text directly (trimmed)
         return responseText.trim() || text;
       }
@@ -276,6 +277,45 @@
     try {
       const { apiKeys, customApi, translateFormulas } = config;
       const apiKey = apiKeys[service] || "";
+
+      // Try to use WASM translation module if available
+      const translationWasm = cof.translationWasm;
+      if (translationWasm && translationWasm.translateText) {
+        try {
+          // Map service names to WASM service names
+          let wasmService = service;
+          if (service === "google-free" || service === "google") {
+            wasmService = "google";
+          } else if (service === "microsoft-free" || service === "microsoft") {
+            wasmService = "bing";
+          } else if (service === "chatgpt") {
+            wasmService = "chatgpt";
+          } else if (service === "gemini") {
+            wasmService = "gemini";
+          } else if (service === "pollinations") {
+            wasmService = "pollinations";
+          } else if (service === "custom") {
+            wasmService = "custom";
+          }
+          
+          // Set API key if provided
+          if (apiKey && translationWasm.setApiKey) {
+            translationWasm.setApiKey(wasmService, apiKey);
+          }
+          
+          // Set custom service config if provided
+          if (service === "custom" && customApi && translationWasm.setCustomService) {
+            translationWasm.setCustomService(customApi);
+          }
+          
+          // Use WASM translation
+          const sourceLang = "auto"; // Auto-detect source language
+          return await translationWasm.translateText(wasmService, sourceLang, targetLang, content);
+        } catch (wasmError) {
+          diag("translateWasmFallback", String(wasmError?.message || wasmError || ""));
+          // Fall through to legacy implementation
+        }
+      }
 
       // Google and Microsoft can work without API keys using free endpoints
       if (!apiKey && service !== "pollinations" && service !== "google" && service !== "microsoft" && service !== "google-free" && service !== "microsoft-free") {

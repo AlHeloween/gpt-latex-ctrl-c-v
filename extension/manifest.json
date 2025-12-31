@@ -21,6 +21,7 @@
         "lib/cof-anchor.js",
         "lib/cof-analysis.js",
         "lib/cof-translate.js",
+        "lib/cof-translation-wasm.js",
         "content-script.js"
       ],
       "run_at": "document_idle",
@@ -29,7 +30,8 @@
   ],
   "web_accessible_resources": [
     "assets/mathml2omml.xsl",
-    "wasm/tex_to_mathml.wasm"
+    "wasm/tex_to_mathml.wasm",
+    "wasm/translation_wasm.wasm"
   ],
   "icons": { "48": "icons/icon48.png", "96": "icons/icon96.png" },
   "browser_action": {

@@ -15,8 +15,10 @@ function clipboardDiag() {
       hasClipboardItem: typeof ClipboardItem !== "undefined",
       secureContext: typeof window !== "undefined" ? !!window.isSecureContext : null,
     };
-  } catch {
-    return { diagError: true };
+  } catch (e) {
+    const diag = globalThis.__cof?.diag || (() => {});
+    diag("offscreenDiagError", String(e?.message || e || ""));
+    return { diagError: true, error: String(e?.message || e || "") };
   }
 }
 

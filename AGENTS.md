@@ -29,6 +29,74 @@
 - After test runs: run `uv run python tools/cleanup_test_results.py` so `test_results/` only contains the most recent outputs.
 - If debugging Word truncation/CF_HTML: run `uv run python tests/test_real_clipboard_docx.py --out-root test_results/real_clipboard` and inspect `cfhtml_validation.json` per case.
 
+## Security: Never Expose Sensitive User Data (ABSOLUTE)
+
+**ABSOLUTE RULE: Never commit, hardcode, or expose sensitive user data in the codebase.**
+
+- **Sensitive data includes:**
+  - API keys (Google, OpenAI, Microsoft, etc.)
+  - Authentication tokens
+  - Passwords or credentials
+  - Personal user information
+  - Private keys or certificates
+
+- **Required practices:**
+  - Use secure keyring storage for test scripts (see `tests/AI/api_keys.py`) - **preferred method**
+    - Example: `from api_keys import get_api_key; api_key = get_api_key("gemini")`
+    - Store keys: `from api_keys import set_api_key; set_api_key("gemini", "your-key")`
+  - Use environment variables for API keys only if keyring is unavailable
+  - Never hardcode credentials, even as "fallback" or "example" values
+  - Never commit `.env` files or files containing secrets
+  - Use `.gitignore` to exclude files containing sensitive data
+
+- **Banned (Exact):**
+  - Hardcoding API keys in source code
+  - Committing API keys in any file (including test files)
+  - Using placeholder/example keys that could be mistaken for real keys
+  - Storing credentials in version control
+  - Using hardcoded fallback keys in production code
+
+- **If sensitive data is found:**
+  - Remove it immediately from the codebase
+  - Rotate/revoke the exposed credentials
+  - Use keyring storage or environment variables instead
+  - Verify no sensitive data remains with: `rg -i "AIza[0-9A-Za-z_-]{35}"` or similar patterns
+
+## Task Completion Criteria (ABSOLUTE)
+
+**ABSOLUTE RULE: Never claim task completion if code is not *WIRED*.**
+
+- **Wired means:** Code is actually connected, integrated, and functional - not just written.
+- **Completion requires:**
+  - All functions are called from actual entry points (FFI exports, event handlers, etc.)
+  - Integration points are connected (JavaScript ↔ WASM, content script ↔ background, etc.)
+  - Code paths are exercised (not just defined but actually invoked)
+  - No "dead code" warnings that indicate unused infrastructure
+  - Placeholder functions are replaced with real implementations
+  - End-to-end flow works (input → processing → output)
+
+- **Dead Code Check (Exact):** If `rg -nu dead_code rust` returns any matches, the task is **incomplete**.
+  - This indicates functions/structs/modules exist but are never used
+  - Exceptions: Only `#[allow(dead_code)]` annotations that are temporary during integration are acceptable
+  - Core functionality must not have dead code warnings
+
+- **Banned (Exact):** Claiming "build successful" or "implementation complete" when:
+  - Functions exist but are never called
+  - FFI exports return placeholder errors
+  - Service registries are initialized but never used
+  - JavaScript bridges are defined but not connected
+  - Code compiles but has no execution path
+  - `rg -nu dead_code rust` returns positive results
+
+- **Evidence of wiring (Required):**
+  - Functions appear in call stacks or execution traces
+  - Integration tests exercise the code paths
+  - No dead code warnings for core functionality (verified by `rg -nu dead_code rust`)
+  - Manual verification shows end-to-end functionality
+  - Code is invoked, not just defined
+
+**If code is not wired, state: "Infrastructure created, integration pending" - never "Complete".**
+
 ## Coding Style & Naming Conventions
 
 - JavaScript: 2-space indent, prefer `const`/`let`, keep `DEBUG = false` by default.

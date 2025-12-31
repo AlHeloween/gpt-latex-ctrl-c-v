@@ -213,7 +213,12 @@
         // If translation failed, do normal copy
         const sel = window.getSelection();
         if (sel && sel.toString()) {
-          document.execCommand("copy");
+          const text = sel.toString();
+          const r = await clipboard.writeText(text);
+          if (!r?.ok) {
+            diag("copyInterceptionFallbackError", String(r?.error || "Clipboard write failed"));
+            throw new Error(String(r?.error || "Clipboard write unavailable"));
+          }
         }
       } else {
         ui.toast("Translated content copied to clipboard.", false);
@@ -224,10 +229,16 @@
       try {
         const sel = window.getSelection();
         if (sel && sel.toString()) {
-          document.execCommand("copy");
+          const text = sel.toString();
+          const r = await clipboard.writeText(text);
+          if (!r?.ok) {
+            diag("copyInterceptionFallbackError", String(r?.error || "Clipboard write failed"));
+            throw new Error(String(r?.error || "Clipboard write unavailable"));
+          }
         }
       } catch (e2) {
         diag("copyInterceptionFallbackError", String(e2));
+        throw e2; // Re-throw to ensure error is not silently ignored
       }
     }
   }

@@ -1,10 +1,20 @@
+import sys
+from pathlib import Path
 from google import genai
 from google.genai import types
 from PIL import Image
 from io import BytesIO
 
+# Add parent directory to path to import api_keys
+sys.path.insert(0, str(Path(__file__).parent))
+from api_keys import get_api_key
+
 # 1. Setup the client
-client = genai.Client(api_key="AIzaSyD72AjikereonlhM8CiLeeiGxYGW1VwZjk")
+# Get API key from keyring
+api_key = get_api_key("gemini") or get_api_key("google")
+if not api_key:
+    raise ValueError("API key not found in keyring. Please store it using: from api_keys import set_api_key; set_api_key('gemini', 'your-key')")
+client = genai.Client(api_key=api_key)
 
 # 2. Define prompt
 prompt = "A futuristic city with flying cars, neon lights, and a giant glowing moon, digital art style"
