@@ -129,20 +129,19 @@ class PopupTester:
         
         try:
             if self.browser_name == "chromium":
-                # Get extension ID
-                background_page = self.context.background_pages[0] if self.context.background_pages else None
-                if not background_page:
-                    self.log("No background page found", "error")
-                    return False
-                
-                # Get extension ID from background page
-                extension_id = await background_page.evaluate("""
+                if not self.service_worker:
+                    self.service_worker = await self.context.wait_for_event("serviceworker")
+
+                # MV3: derive extension ID from the service worker context.
+                extension_id = await self.service_worker.evaluate(
+                    """
                     () => {
                         const chrome = globalThis.chrome;
                         if (!chrome?.runtime) return null;
                         return chrome.runtime.id;
                     }
-                """)
+                    """
+                )
                 
                 if not extension_id:
                     self.log("Could not get extension ID", "error")
@@ -150,6 +149,11 @@ class PopupTester:
                 
                 # Open popup
                 popup_url = f"chrome-extension://{extension_id}/popup.html"
+                if self.popup_page:
+                    try:
+                        await self.popup_page.close()
+                    except Exception:
+                        pass
                 self.popup_page = await self.context.new_page()
                 await self.popup_page.goto(popup_url, wait_until="domcontentloaded")
                 self.log("Popup opened", "success")
@@ -233,7 +237,7 @@ class PopupTester:
         
         try:
             # Find the enable checkbox
-            checkbox = await self.popup_page.wait_for_selector("#enable-translation", timeout=5000)
+            checkbox = await self.popup_page.wait_for_selector("#popupTranslationEnabled", timeout=5000)
             if not checkbox:
                 self.log("Enable checkbox not found", "error")
                 return False
@@ -272,14 +276,11 @@ class PopupTester:
             return False
         
         try:
-            # Find language select elements
-            lang_selects = await self.popup_page.query_selector_all("select.language-select")
-            if len(lang_selects) == 0:
-                self.log("Language selects not found", "error")
+            first_select = await self.popup_page.wait_for_selector("#popupTargetLanguage1", timeout=5000)
+            if not first_select:
+                self.log("Language select #popupTargetLanguage1 not found", "error")
                 return False
-            
-            # Select a language in the first select
-            first_select = lang_selects[0]
+
             await first_select.select_option("es")  # Spanish
             await asyncio.sleep(0.5)  # Wait for storage update
             
@@ -302,20 +303,21 @@ class PopupTester:
             return False
         
         try:
-            # Find settings link
-            settings_link = await self.popup_page.wait_for_selector("a[href*='options.html']", timeout=5000)
+            # The popup uses JS to open options (runtime.openOptionsPage).
+            settings_link = await self.popup_page.wait_for_selector("#openOptions", timeout=5000)
             if not settings_link:
                 self.log("Settings link not found", "error")
                 return False
             
-            # Click settings link (this will open in new tab)
-            # Note: We can't easily verify the new tab opened, but we can check the link exists
-            href = await settings_link.get_attribute("href")
-            if not href or "options.html" not in href:
-                self.log("Settings link href incorrect", "error")
+            # Click settings link and verify an options page appears.
+            async with self.context.expect_page() as pinfo:
+                await settings_link.click()
+            options_page = await pinfo.value
+            await options_page.wait_for_load_state("domcontentloaded")
+            if "options.html" not in (options_page.url or ""):
+                self.log(f"Options page URL unexpected: {options_page.url}", "error")
                 return False
-            
-            self.log("Settings link exists and has correct href", "success")
+            self.log("Settings link opened options page", "success")
             return True
         except Exception as e:
             self.log(f"Settings link test failed: {e}", "error")

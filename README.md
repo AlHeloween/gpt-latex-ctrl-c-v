@@ -44,6 +44,18 @@ This will:
 
 ### Run Tests
 
+Single entry point (recommended):
+
+```powershell
+uv run python tests/run_all.py --fast
+```
+
+Full suite (may overwrite clipboard on Windows):
+
+```powershell
+uv run python tests/run_all.py --include-large
+```
+
 **Windows:**
 ```cmd
 tests\run_tests.bat
@@ -54,7 +66,7 @@ tests\run_tests.bat
 ./tests/run_tests.sh
 ```
 
-`tests/run_tests.*` does not write persistent artifacts by default.
+`tests/run_tests.*` delegates to `tests/run_all.py`.
 
 ## Real clipboard tests (Windows)
 
