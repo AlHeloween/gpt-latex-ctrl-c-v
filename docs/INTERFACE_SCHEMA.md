@@ -94,13 +94,12 @@ Popup (popup.html)
 ├── Status Display
 │   └── #status (success/error messages, auto-hide after 3s)
 ├── Enable Translation Checkbox (#popupTranslationEnabled)
-├── Target Languages Section
-│   ├── Label: "Target Languages:"
-│   ├── #popupTargetLanguage1 (269 languages + "None")
-│   ├── #popupTargetLanguage2 (269 languages + "None")
-│   ├── #popupTargetLanguage3 (269 languages + "None")
-│   ├── #popupTargetLanguage4 (269 languages + "None")
-│   └── #popupTargetLanguage5 (269 languages + "None")
+├── Active Target Language Section
+│   ├── Label: "Active target language:"
+│   └── #popupActiveTargetLanguage (choices = configured favorites from Options)
+├── Translation Model Section
+│   ├── Label: "Translation model:"
+│   └── #popupTranslationService (sets translation service/engine)
 └── Actions Section
     └── Advanced Settings Link (#openOptions)
         └── Opens options page
@@ -108,7 +107,9 @@ Popup (popup.html)
 
 **Behavior:**
 - Auto-save: Changes save immediately on toggle/selection change
-- Language dropdowns: Populated dynamically from embedded LANGUAGE_OPTIONS constant
+- Active target dropdown: Shows only the 1..5 favorite languages configured in Options (`translation.targetLanguages`)
+- Selection persists: Updates `translation.defaultLanguage` (used by translation pipeline)
+- Translation model dropdown: Updates `translation.service`
 - Status messages: Auto-hide after 3 seconds
 - Link to options: Opens full options page in new tab
 
@@ -147,10 +148,10 @@ Content Script UI
 
 ```
 Context Menu Items
-├── "Copy as Office Format" (gpt-copy-paster)
-├── "Copy as Office Format (Markdown selection)" (gpt-copy-paster-from-markdown)
-├── "Copy as Markdown" (copy-as-markdown)
-└── "Extract selected HTML" (extract-selected-html)
+├── "Copy as Office Format" (01-copy-office-format)
+├── "Copy as Office Format (Markdown selection)" (02-copy-office-format-markdown)
+├── "Copy as Markdown" (03-copy-as-markdown)
+└── "Copy selection HTML" (99-copy-selection-html)
 ```
 
 **Behavior:**
@@ -205,7 +206,7 @@ Context Menu Items
   translation: {
     enabled: false,
     service: "pollinations",
-    targetLanguages: ["", "", "", "", ""],
+    targetLanguages: ["en", "id", "ar", "zh-CN", "ru"],
     translateFormulas: false,
     defaultLanguage: "en"
   },
@@ -490,7 +491,7 @@ DOMContentLoaded
   → importSettings(file)
 
 #translationService.change
-  → updateServiceVisibility(service)
+  → updateServiceVisibility(service) + auto-save
 ```
 
 ### Popup (`popup.js`)
@@ -501,10 +502,13 @@ DOMContentLoaded
   └── loadSettings()
 
 #popupTranslationEnabled.change
-  → saveSettings()
+  → saveTranslationEnabled()
 
-#popupTargetLanguage[1-5].change
-  → saveSettings()
+#popupActiveTargetLanguage.change
+  → saveActiveTargetLanguage()
+
+#popupTranslationService.change
+  → saveTranslationService()
 
 #openOptions.click
   → browserApi.runtime.openOptionsPage()
@@ -520,7 +524,8 @@ keydown (Ctrl-C / Cmd-C)
 runtime.onMessage
   ├── "COPY_OFFICE_FORMAT"
   ├── "COPY_AS_MARKDOWN"
-  └── "EXTRACT_SELECTED_HTML"
+  ├── "EXTRACT_SELECTED_HTML" (legacy alias for HTML exact copy)
+  └── "COPY_AS_HTML"
 ```
 
 ---

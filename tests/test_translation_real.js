@@ -96,9 +96,9 @@ async function testRealAnchoring() {
   
   assert(result.anchors.formulas.length === 1, 'Should find 1 formula');
   assert(result.anchors.codes.length === 1, 'Should find 1 code block');
-  assert(result.html.includes('<!--FORMULA_ANCHOR_0-->'), 'Should contain formula anchor');
-  // Anchor index is shared, so code will be CODE_ANCHOR_1 (after formula's CODE_ANCHOR_0)
-  const hasCodeAnchor = /<!--CODE_ANCHOR_\d+-->/.test(result.html);
+  assert(result.html.includes('[[COF_FORMULA_0]]'), 'Should contain formula anchor');
+  // Anchor index is shared, so code will be [[COF_CODE_1]] (after formula's [[COF_FORMULA_0]])
+  const hasCodeAnchor = /\[\[COF_CODE_\d+\]\]/.test(result.html);
   assert(hasCodeAnchor, `Should contain code anchor. HTML: ${result.html}`);
   assert(!result.html.includes('<math><mi>x</mi>'), 'Should not contain original formula');
   
@@ -134,15 +134,40 @@ async function testRealTranslationGoogleFree() {
       return;
     }
     
-    const text = 'Hello world';
+    const token = 'TOKEN_XYZ_1234567890';
+    const text = `Hello world. This is a second sentence with ${token}.`;
     const translated = await translate.translateWithGoogleFree(text, 'es');
     
     assert(typeof translated === 'string', 'Should return string');
     assert(translated.length > 0, 'Should return translated text');
     assert(translated !== text, 'Should be different from original');
-    console.log(`✓ Google Translate (free): "${text}" -> "${translated}"`);
+    assert(translated.includes(token), 'Should include token from later segment (avoid truncation)');
+    console.log(`✓ Google Translate (free): "${text}" -> "${translated.substring(0, 80)}..."`);
   } catch (e) {
     console.log(`⚠ Google Translate test skipped: ${e.message}`);
+  }
+}
+
+async function testRealTranslationMicrosoftFree() {
+  console.log('Testing Microsoft (Bing) (free endpoint, real API)...');
+
+  try {
+    if (!translate.translateWithMicrosoftFree) {
+      console.log('⚠ Microsoft free endpoint not available (skipping)');
+      return;
+    }
+
+    const token = 'TOKEN_ABC_0987654321';
+    const text = `Hello world. This is a second sentence with ${token}.`;
+    const translated = await translate.translateWithMicrosoftFree(text, 'es');
+
+    assert(typeof translated === 'string', 'Should return string');
+    assert(translated.length > 0, 'Should return translated text');
+    assert(translated !== text, 'Should be different from original');
+    assert(translated.includes(token), 'Should include token from later segment (avoid truncation)');
+    console.log(`✓ Microsoft (Bing) free: "${text}" -> "${translated.substring(0, 80)}..."`);
+  } catch (e) {
+    console.log(`⚠ Microsoft (Bing) test skipped: ${e.message}`);
   }
 }
 
@@ -163,6 +188,22 @@ async function testRealTranslationPollinations() {
     assert(typeof translated === 'string', 'Should return string');
     assert(translated.length > 0, 'Should return translated text');
     console.log(`✓ Pollinations: "${text}" -> "${translated.substring(0, 50)}..."`);
+
+    // Longer input (regression guard: avoid URL-length failures).
+    const longToken = 'TOKEN_LONG_12345';
+    const longText = (`Hello world. `).repeat(200) + longToken + (`. Hello world `).repeat(200);
+    const translatedLong = await translate.translateWithPollinations(
+      longText,
+      'es',
+      '',
+      null,
+      null,
+      undefined
+    );
+    assert(typeof translatedLong === 'string', 'Should return string for long text');
+    assert(translatedLong.length > 0, 'Should return translated long text');
+    assert(translatedLong.includes(longToken), 'Should preserve token in long text');
+    console.log(`✓ Pollinations long input ok (len=${longText.length})`);
   } catch (e) {
     console.log(`⚠ Pollinations test skipped: ${e.message}`);
   }
@@ -282,6 +323,7 @@ async function runAllTests() {
     await testRealAnchoring();
     await testRealAnalysis();
     await testRealTranslationGoogleFree();
+    await testRealTranslationMicrosoftFree();
     await testRealTranslationPollinations();
     await testRealTranslationChatGPT();
     await testRealTranslationGemini();

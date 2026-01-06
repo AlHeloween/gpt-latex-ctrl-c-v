@@ -22,6 +22,9 @@ Be ready to explain:
 - `contextMenus` (context menu entry)
 - `activeTab` (read selection/DOM on user action)
 - `clipboardWrite` (write the converted selection)
+- `storage` (persist extension settings)
+- `downloads` (Save As file dialog for config export)
+- `<all_urls>` (inject content script on pages where the user copies content)
 
 ## 4) Privacy policy
 

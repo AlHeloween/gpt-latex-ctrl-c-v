@@ -19,7 +19,8 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-CRATE_DIR = PROJECT_ROOT / "rust" / "tex_to_mathml_wasm"
+TEX_CRATE_DIR = PROJECT_ROOT / "rust" / "tex_to_mathml_wasm"
+TRANSLATION_CRATE_DIR = PROJECT_ROOT / "rust" / "translation_wasm"
 OUT_DIR = PROJECT_ROOT / "extension" / "wasm"
 
 
@@ -37,12 +38,14 @@ def main() -> int:
     if not args.debug:
         build_args.append("--release")
 
-    if not CRATE_DIR.exists():
-        raise SystemExit(f"Missing crate dir: {CRATE_DIR}")
+    if not TEX_CRATE_DIR.exists():
+        raise SystemExit(f"Missing crate dir: {TEX_CRATE_DIR}")
+    if not TRANSLATION_CRATE_DIR.exists():
+        raise SystemExit(f"Missing crate dir: {TRANSLATION_CRATE_DIR}")
 
-    _run(build_args, cwd=CRATE_DIR)
+    _run(build_args, cwd=TEX_CRATE_DIR)
 
-    wasm_src = CRATE_DIR / "target" / "wasm32-unknown-unknown" / profile / "tex_to_mathml_wasm.wasm"
+    wasm_src = TEX_CRATE_DIR / "target" / "wasm32-unknown-unknown" / profile / "tex_to_mathml_wasm.wasm"
     if not wasm_src.exists():
         raise SystemExit(f"Build did not produce wasm: {wasm_src}")
 
@@ -50,6 +53,14 @@ def main() -> int:
     wasm_dst = OUT_DIR / "tex_to_mathml.wasm"
     shutil.copy2(wasm_src, wasm_dst)
     print(f"OK: wrote {wasm_dst}")
+
+    _run(build_args, cwd=TRANSLATION_CRATE_DIR)
+    translation_src = TRANSLATION_CRATE_DIR / "target" / "wasm32-unknown-unknown" / profile / "translation_wasm.wasm"
+    if not translation_src.exists():
+        raise SystemExit(f"Build did not produce wasm: {translation_src}")
+    translation_dst = OUT_DIR / "translation_wasm.wasm"
+    shutil.copy2(translation_src, translation_dst)
+    print(f"OK: wrote {translation_dst}")
     return 0
 
 

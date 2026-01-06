@@ -241,9 +241,16 @@ def main() -> int:
     data = dump_clipboard()
 
     (out_dir / "dump.json").write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    (out_dir / "cfhtml.txt").write_text(data.get("cfhtml", ""), encoding="utf-8")
-    (out_dir / "fragment.html").write_text(data.get("fragment", ""), encoding="utf-8")
-    (out_dir / "plain.txt").write_text(data.get("plain_text", ""), encoding="utf-8")
+
+    # Preserve exact newline bytes (CF_HTML and CF_UNICODETEXT commonly contain "\r\n").
+    # On Windows, default newline translation would turn "\r\n" into "\r\r\n".
+    def _write_text_exact(path: Path, text: str) -> None:
+        with open(path, "w", encoding="utf-8", newline="") as f:
+            f.write(text)
+
+    _write_text_exact(out_dir / "cfhtml.txt", str(data.get("cfhtml", "")))
+    _write_text_exact(out_dir / "fragment.html", str(data.get("fragment", "")))
+    _write_text_exact(out_dir / "plain.txt", str(data.get("plain_text", "")))
 
     return 0
 

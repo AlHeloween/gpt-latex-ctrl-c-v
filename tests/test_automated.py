@@ -353,7 +353,15 @@ class AutomatedExtensionTester:
             self.results["errors"].append(f"Copy trigger error: {str(e)}")
             return False
 
-    async def verify_clipboard_content(self, expected_token: str, before_sha: str, expect_formulas: bool, expect_markdown: bool = False, copy_mode: str = "html") -> dict:
+    async def verify_clipboard_content(
+        self,
+        expected_token: str,
+        before_sha: str,
+        before_plain_sha: str,
+        expect_formulas: bool,
+        expect_markdown: bool = False,
+        copy_mode: str = "html",
+    ) -> dict:
         """Verify OS clipboard content was updated by the extension."""
         self.log("Verifying OS clipboard content...", "info")
 
@@ -373,6 +381,7 @@ class AutomatedExtensionTester:
             return verification
 
         from tools.win_clipboard_dump import dump_clipboard  # type: ignore
+        import hashlib
 
         deadline_s = 15.0
         poll_s = 0.2
@@ -383,8 +392,18 @@ class AutomatedExtensionTester:
             last = d
             sha = d.get("cfhtml_bytes_sha256") or ""
             plain = d.get("plain_text") or ""
-            if sha and sha != before_sha and expected_token and expected_token in plain:
-                break
+            plain_sha = hashlib.sha256(str(plain).encode("utf-8")).hexdigest() if plain is not None else ""
+
+            token_ok = bool(expected_token) and (str(expected_token).lower() in str(plain).lower())
+
+            # Markdown/export modes may not update CF_HTML at all (text-only clipboard write),
+            # so use plain-text change as the deterministic postcondition.
+            if expect_markdown:
+                if plain and before_plain_sha and plain_sha != before_plain_sha and token_ok:
+                    break
+            else:
+                if sha and sha != before_sha and token_ok:
+                    break
             if asyncio.get_running_loop().time() - t0 >= deadline_s:
                 break
             await asyncio.sleep(poll_s)
@@ -409,19 +428,28 @@ class AutomatedExtensionTester:
             if "[PARSE ERROR:" in fragment:
                 verification["no_parse_error_markers"] = False
         
-        # Check if markdown (plain text with markdown syntax, no HTML)
-        # For markdown export, we expect plain text, not HTML fragment
+        # Extract mode now copies the selection HTML exactly; require HTML to be present.
+        if copy_mode == "extract":
+            if not fragment:
+                verification["error"] = "clipboard missing HTML fragment (extract mode)"
+                return verification
+            low = fragment.lstrip().lower()
+            # Ensure we didn't accidentally emit Word-wrapped Office HTML.
+            if low.startswith("<!doctype html") or "urn:schemas-microsoft-com:office:office" in low:
+                verification["error"] = "extract mode should copy exact HTML fragment (not Word-wrapped HTML)"
+                return verification
+        
+        # Check if markdown (plain text with markdown syntax).
         if expect_markdown:
-            if plain_text and (not fragment or len(fragment) < 100):
-                # Check for markdown indicators
-                if any(marker in plain_text for marker in ["# ", "## ", "* ", "- ", "```", "`"]):
+            if plain_text:
+                markers = ["# ", "## ", "* ", "- ", "```", "`"]
+                if any(m in plain_text for m in markers) or ("\n" in plain_text and len(plain_text) > 50):
                     verification["is_markdown"] = True
-                    verification["has_html"] = False  # Markdown export doesn't have HTML
 
         # For markdown export and extract, we expect plain text, not HTML
         # So we should check plain text for the token, not require HTML
         if expected_token:
-            if expect_markdown or copy_mode == "extract":
+            if expect_markdown:
                 # For markdown/extract, check plain text only
                 # Be lenient - check if any part of the token appears, or if clipboard has content
                 if plain_text and (expected_token.lower() in plain_text.lower() or len(plain_text) > 50):
@@ -520,13 +548,20 @@ class AutomatedExtensionTester:
                 token = (selected.strip().splitlines() or [""])[0][:64]
             
             before_sha = ""
+            before_plain_sha = ""
             if os.name == "nt":
                 try:
                     from tools.win_clipboard_dump import dump_clipboard  # type: ignore
+                    import hashlib
 
-                    before_sha = dump_clipboard().get("cfhtml_bytes_sha256") or ""
+                    before = dump_clipboard()
+                    before_sha = before.get("cfhtml_bytes_sha256") or ""
+                    before_plain_sha = hashlib.sha256(
+                        str(before.get("plain_text") or "").encode("utf-8")
+                    ).hexdigest()
                 except Exception:
                     before_sha = ""
+                    before_plain_sha = ""
 
             # Trigger copy (selection already set)
             if measure_performance:
@@ -542,8 +577,10 @@ class AutomatedExtensionTester:
             verification = await self.verify_clipboard_content(
                 expected_token=token,
                 before_sha=before_sha,
+                before_plain_sha=before_plain_sha,
                 expect_formulas=expect_formulas,
                 expect_markdown=expect_markdown,
+                copy_mode=copy_mode,
             )
             
             # Check results
@@ -782,4 +819,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-

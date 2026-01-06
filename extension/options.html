@@ -1777,16 +1777,24 @@
       </div>
     </div>
 
-    <div class="section">
-      <h2>Keyboard Shortcuts</h2>
-      <label>
-        <input type="checkbox" id="interceptCopy" />
-        Intercept Ctrl-C (translate on copy)
-      </label>
-    </div>
+	    <div class="section">
+	      <h2>Keyboard Shortcuts</h2>
+	      <label>
+	        <input type="checkbox" id="interceptCopy" />
+	        Intercept Ctrl-C (translate on copy)
+	      </label>
+	    </div>
 
-    <div class="section">
-      <h2>API Keys</h2>
+	    <div class="section">
+	      <h2>Advanced</h2>
+	      <label>
+	        <input type="checkbox" id="debugLogsEnabled" />
+	        Enable debug logs (console) for troubleshooting
+	      </label>
+	    </div>
+
+	    <div class="section">
+	      <h2>API Keys</h2>
       <div class="service-section" id="googleSection">
         <label>
           Google Translate API Key:
@@ -1849,14 +1857,16 @@
       </div>
     </div>
 
-    <div class="section">
-      <h2>Configuration Management</h2>
-      <button id="saveBtn">Save Settings</button>
-      <button id="resetBtn" class="secondary">Reset to Defaults</button>
-      <button id="exportBtn" class="secondary">Export Configuration</button>
-      <button id="importBtn" class="secondary">Import Configuration</button>
-      <input type="file" id="importFile" accept=".json" style="display: none" />
-    </div>
+	    <div class="section">
+	      <h2>Configuration Management</h2>
+	      <div style="margin: 6px 0; color: #666; font-size: 12px;">
+	        Settings are applied automatically.
+	      </div>
+	      <button id="resetBtn" class="secondary">Reset to Defaults</button>
+	      <button id="exportBtn" class="secondary">Export Configuration</button>
+	      <button id="importBtn" class="secondary">Import Configuration</button>
+	      <input type="file" id="importFile" accept=".json" style="display: none" />
+	    </div>
 
     <script src="lib/cof-core.js"></script>
     <script src="lib/cof-storage.js"></script>

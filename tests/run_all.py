@@ -58,9 +58,10 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--browser", default="chromium", choices=["chromium", "firefox"])
     parser.add_argument("--headless", action="store_true", help="Run headless when supported (Chromium extension tests are typically headful).")
     parser.add_argument("--debug", action="store_true", help="Enable debug logging/UI where supported.")
-    parser.add_argument("--with-translation-unit", action="store_true", help="Run pure-Python translation/unit tests.")
+    parser.add_argument("--skip-translation-unit", action="store_true", help="Skip pure-Python translation/unit tests.")
     parser.add_argument("--with-edge-cases", action="store_true", help="Run Playwright edge-case suite (slower).")
     parser.add_argument("--with-popup", action="store_true", help="Run popup UI suite (may be skipped on Chromium MV3 builds without popup files).")
+    parser.add_argument("--fail-fast", action="store_true", help="Stop on first failing test step (after prerequisites).")
     parser.add_argument(
         "--fast",
         action="store_true",
@@ -78,9 +79,16 @@ def main(argv: list[str]) -> int:
 
     py = sys.executable
     results: list[StepResult] = []
+    first_fail_rc: int | None = None
+
+    def note_result(r: StepResult) -> None:
+        nonlocal first_fail_rc
+        results.append(r)
+        if r.status == "FAIL" and first_fail_rc is None:
+            first_fail_rc = r.rc
 
     if not args.skip_build_wasm:
-        results.append(
+        note_result(
             _run_step(
                 name="Build Rust WASM (tex_to_mathml.wasm)",
                 argv=[py, "tools/build_rust_wasm.py"],
@@ -90,8 +98,18 @@ def main(argv: list[str]) -> int:
         if results[-1].status == "FAIL":
             return results[-1].rc
 
+        note_result(
+            _run_step(
+                name="Translation WASM smoke (no network)",
+                argv=["node", "tests/test_translation_wasm_smoke.js"],
+                cwd=PROJECT_ROOT,
+            )
+        )
+        if results[-1].status == "FAIL" and args.fail_fast:
+            return results[-1].rc
+
     if not args.skip_js_size:
-        results.append(
+        note_result(
             _run_step(
                 name="Check JS size budgets",
                 argv=[py, "tools/check_js_size.py"],
@@ -101,15 +119,105 @@ def main(argv: list[str]) -> int:
         if results[-1].status == "FAIL":
             return results[-1].rc
 
-    if args.with_translation_unit:
-        results.append(
+    if not args.skip_translation_unit:
+        note_result(
             _run_step(
                 name="Translation unit tests (no network keys)",
                 argv=[py, "tests/run_translation_tests.py"],
                 cwd=PROJECT_ROOT,
             )
         )
-        if results[-1].status == "FAIL":
+        if results[-1].status == "FAIL" and args.fail_fast:
+            return results[-1].rc
+
+        note_result(
+            _run_step(
+                name="Node: google-free chunking (mocked, no network)",
+                argv=["node", "tests/test_translation_google_free_chunking.js"],
+                cwd=PROJECT_ROOT,
+            )
+        )
+        if results[-1].status == "FAIL" and args.fail_fast:
+            return results[-1].rc
+
+        note_result(
+            _run_step(
+                name="Node: paid google chunking (mocked, no network)",
+                argv=["node", "tests/test_translation_chunking_paid_google.js"],
+                cwd=PROJECT_ROOT,
+            )
+        )
+        if results[-1].status == "FAIL" and args.fail_fast:
+            return results[-1].rc
+
+        note_result(
+            _run_step(
+                name="Node: LLM marker integrity (mocked, no network)",
+                argv=["node", "tests/test_translation_integrity_llm_markers.js"],
+                cwd=PROJECT_ROOT,
+            )
+        )
+        if results[-1].status == "FAIL" and args.fail_fast:
+            return results[-1].rc
+
+        note_result(
+            _run_step(
+                name="Node: anchor restore independent of order",
+                argv=["node", "tests/test_anchor_restore_marker_order.js"],
+                cwd=PROJECT_ROOT,
+            )
+        )
+        if results[-1].status == "FAIL" and args.fail_fast:
+            return results[-1].rc
+
+        note_result(
+            _run_step(
+                name="Node: selection multi-range dedupe",
+                argv=["node", "tests/test_selection_multirange_dedupe.js"],
+                cwd=PROJECT_ROOT,
+            )
+        )
+        if results[-1].status == "FAIL" and args.fail_fast:
+            return results[-1].rc
+
+        note_result(
+            _run_step(
+                name="Node: pollinations is serialized (mocked, no network)",
+                argv=["node", "tests/test_translation_pollinations_serial.js"],
+                cwd=PROJECT_ROOT,
+            )
+        )
+        if results[-1].status == "FAIL" and args.fail_fast:
+            return results[-1].rc
+
+        note_result(
+            _run_step(
+                name="Node: pollinations smoke (mocked, no network)",
+                argv=["node", "tests/test_translation_pollinations_smoke.js"],
+                cwd=PROJECT_ROOT,
+            )
+        )
+        if results[-1].status == "FAIL" and args.fail_fast:
+            return results[-1].rc
+
+        note_result(
+            _run_step(
+                name="Node: pollinations invalid JSON smoke (mocked, no network)",
+                argv=["node", "tests/test_translation_pollinations_invalid_json_smoke.js"],
+                cwd=PROJECT_ROOT,
+            )
+        )
+        if results[-1].status == "FAIL" and args.fail_fast:
+            return results[-1].rc
+
+        note_result(
+            _run_step(
+                name="Node: gemini smoke (mocked, no network)",
+                argv=["node", "tests/test_translation_gemini_smoke.js"],
+                cwd=PROJECT_ROOT,
+            )
+        )
+        if results[-1].status == "FAIL" and args.fail_fast:
             return results[-1].rc
 
     if not args.skip_playwright:
@@ -121,25 +229,25 @@ def main(argv: list[str]) -> int:
         if args.debug:
             pw_common.append("--debug")
 
-        results.append(
+        note_result(
             _run_step(
                 name="Playwright: core copy pipeline",
                 argv=[py, "tests/test_automated.py", *pw_common],
                 cwd=PROJECT_ROOT,
             )
         )
-        if results[-1].status == "FAIL":
+        if results[-1].status == "FAIL" and args.fail_fast:
             return results[-1].rc
 
         if args.with_edge_cases:
-            results.append(
+            note_result(
                 _run_step(
                     name="Playwright: edge cases",
                     argv=[py, "tests/test_edge_cases.py", *pw_common],
                     cwd=PROJECT_ROOT,
                 )
             )
-            if results[-1].status == "FAIL":
+            if results[-1].status == "FAIL" and args.fail_fast:
                 return results[-1].rc
 
         if args.with_popup:
@@ -153,27 +261,27 @@ def main(argv: list[str]) -> int:
                     cwd=PROJECT_ROOT,
                 )
                 if not _has_chromium_popup(dist_dir):
-                    results.append(StepResult(name="Playwright: popup UI", status="SKIP", rc=0))
+                    note_result(StepResult(name="Playwright: popup UI", status="SKIP", rc=0))
                 else:
-                    results.append(
+                    note_result(
                         _run_step(
                             name="Playwright: popup UI",
                             argv=[py, "tests/test_popup.py", *pw_common],
                             cwd=PROJECT_ROOT,
                         )
                     )
-                    if results[-1].status == "FAIL":
+                    if results[-1].status == "FAIL" and args.fail_fast:
                         return results[-1].rc
                 # already handled
             else:
-                results.append(
+                note_result(
                     _run_step(
                         name="Playwright: popup UI",
                         argv=[py, "tests/test_popup.py", *pw_common],
                         cwd=PROJECT_ROOT,
                     )
                 )
-                if results[-1].status == "FAIL":
+                if results[-1].status == "FAIL" and args.fail_fast:
                     return results[-1].rc
 
     if args.fast:
@@ -186,34 +294,38 @@ def main(argv: list[str]) -> int:
         docx_args = [py, "tests/test_generate_docx_examples.py"]
         if args.include_large:
             docx_args.append("--include-large")
-        results.append(_run_step(name="Generate docx from examples (pure Rust tool)", argv=docx_args, cwd=PROJECT_ROOT))
-        if results[-1].status == "FAIL":
+        note_result(_run_step(name="Generate docx from examples (pure Rust tool)", argv=docx_args, cwd=PROJECT_ROOT))
+        if results[-1].status == "FAIL" and args.fail_fast:
             return results[-1].rc
 
     if not args.skip_word:
         # This test self-skips when Word COM is unavailable.
-        results.append(_run_step(name="Word paste verification (Windows; skips if Word not installed)", argv=[py, "tests/test_word_examples.py"], cwd=PROJECT_ROOT))
-        if results[-1].status == "FAIL":
+        note_result(_run_step(name="Word paste verification (Windows; skips if Word not installed)", argv=[py, "tests/test_word_examples.py"], cwd=PROJECT_ROOT))
+        if results[-1].status == "FAIL" and args.fail_fast:
             return results[-1].rc
 
     if not args.skip_real_clipboard:
         if not _is_windows():
-            results.append(StepResult(name="Real clipboard suites", status="SKIP", rc=0))
+            note_result(StepResult(name="Real clipboard suites", status="SKIP", rc=0))
         else:
+            note_result(_run_step(name="Real clipboard -> payloads (Windows; overwrites clipboard)", argv=[py, "tests/test_real_clipboard_payloads.py"], cwd=PROJECT_ROOT))
+            if results[-1].status == "FAIL" and args.fail_fast:
+                return results[-1].rc
+
             clip_args = [py, "tests/test_real_clipboard_docx.py"]
             if args.include_large:
                 clip_args.append("--include-large")
-            results.append(_run_step(name="Real clipboard -> docx (Windows; overwrites clipboard)", argv=clip_args, cwd=PROJECT_ROOT))
-            if results[-1].status == "FAIL":
+            note_result(_run_step(name="Real clipboard -> docx (Windows; overwrites clipboard)", argv=clip_args, cwd=PROJECT_ROOT))
+            if results[-1].status == "FAIL" and args.fail_fast:
                 return results[-1].rc
 
-            results.append(_run_step(name="Real clipboard -> markdown (Windows; overwrites clipboard)", argv=[py, "tests/test_real_clipboard_markdown.py"], cwd=PROJECT_ROOT))
-            if results[-1].status == "FAIL":
+            note_result(_run_step(name="Real clipboard -> markdown (Windows; overwrites clipboard)", argv=[py, "tests/test_real_clipboard_markdown.py"], cwd=PROJECT_ROOT))
+            if results[-1].status == "FAIL" and args.fail_fast:
                 return results[-1].rc
 
     if not args.skip_cleanup:
-        results.append(_run_step(name="Cleanup test_results (keep most recent outputs)", argv=[py, "tools/cleanup_test_results.py"], cwd=PROJECT_ROOT))
-        if results[-1].status == "FAIL":
+        note_result(_run_step(name="Cleanup test_results (keep most recent outputs)", argv=[py, "tools/cleanup_test_results.py"], cwd=PROJECT_ROOT))
+        if results[-1].status == "FAIL" and args.fail_fast:
             return results[-1].rc
 
     print("\n" + "=" * 70)
@@ -223,7 +335,7 @@ def main(argv: list[str]) -> int:
         print(f"{r.status:4s}  {r.name}")
     print("=" * 70)
 
-    return 0
+    return 0 if first_fail_rc is None else (first_fail_rc or 1)
 
 
 if __name__ == "__main__":

@@ -12,7 +12,7 @@
 
 ## Quick Checks
 
-1. Open DevTools Console (F12) and look for `[Copy as Office Format]` logs.
+1. Open DevTools Console (F12) and look for `[GPT LATEX Ctrl-C Ctrl-V]` logs.
 2. Verify the extension is loaded:
    - Firefox: `about:debugging` -> "This Firefox" -> Inspect the extension.
 3. Repro with a simple page:
@@ -32,7 +32,7 @@ navigator.clipboard
 
 ## Next Step: Enable Debug Logs
 
-- Set `DEBUG = true` in `extension/content-script.js`.
+- Inspect deterministic diagnostics (preferred): `document.documentElement.dataset` and `window.__cofLogs`.
 - Re-run the copy action and capture:
   - console logs
   - the extracted selection HTML (if logged)

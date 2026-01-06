@@ -37,17 +37,14 @@
 **Solutions:**
 
 1. Open Browser Console (Ctrl+Shift+J)
-2. Look for console messages starting with `[Copy as Office Format]`
+2. Look for console messages starting with `[GPT LATEX Ctrl-C Ctrl-V]`
 3. Check for errors in red
 
 **Expected Console Output:**
 
 ```
-[Copy as Office Format] Message received: {type: "COPY_OFFICE_FORMAT"}
-[Copy as Office Format] handleCopy called
-[Copy as Office Format] Selection HTML length: 123
-[Copy as Office Format] Selection text length: 45
-[Copy as Office Format] Copied to clipboard in Office format.
+[GPT LATEX Ctrl-C Ctrl-V] clipboardDebug writeHtml:start {...}
+[GPT LATEX Ctrl-C Ctrl-V] clipboardDebug writeHtml:ok {...}
 ```
 
 **If you see errors:**
@@ -115,7 +112,7 @@
 
    ```
    Press F12 → Console tab
-   Look for [Copy as Office Format] messages
+   Look for [GPT LATEX Ctrl-C Ctrl-V] messages
    ```
 
 3. **Test Selection:**

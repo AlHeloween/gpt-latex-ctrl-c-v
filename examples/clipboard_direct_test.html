@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Clipboard Direct Test</title>
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Arial, sans-serif; padding: 24px; }
+      #sel { border: 1px solid #ddd; padding: 12px; border-radius: 8px; }
+      #md { border: 1px solid #ddd; padding: 12px; border-radius: 8px; margin-top: 16px; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <h1>Clipboard Direct Test</h1>
+
+    <div id="sel">
+      <p>
+        Token: <strong>COF_CLIP_HTML_TOKEN_123456</strong>
+      </p>
+      <p>
+        This has <em>emphasis</em>, <strong>bold</strong>, and <code>&lt;code&gt;</code>.
+      </p>
+      <p>
+        List:
+        <ul>
+          <li>Item A</li>
+          <li>Item B</li>
+        </ul>
+      </p>
+    </div>
+
+    <div id="md">
+**COF_CLIP_MD_TOKEN_123456**
+
+- item 1
+- item 2
+    </div>
+  </body>
+</html>

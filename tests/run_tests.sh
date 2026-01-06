@@ -13,4 +13,4 @@ echo ""
 echo "Note: On Windows, without --fast this runs real clipboard tests and overwrites your clipboard."
 echo ""
 
-uv run python run_all.py "$@"
+uv run python run_all.py --include-large "$@"

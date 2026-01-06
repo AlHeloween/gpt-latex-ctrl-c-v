@@ -165,37 +165,52 @@ function tabsSendMessage(tabId, message, options) {
 
 async function createContextMenu() {
   try {
+    // Some browsers reorder context menu items on reload (e.g., by ID).
+    // Use stable numeric-prefix IDs to enforce a consistent order.
+    const MENU_IDS_OLD = [
+      "gpt-copy-paster",
+      "gpt-copy-paster-from-markdown",
+      "copy-as-markdown",
+      "extract-selected-html",
+      "copy-as-html",
+    ];
+    const MENU_IDS = [
+      "01-copy-office-format",
+      "02-copy-office-format-markdown",
+      "03-copy-as-markdown",
+      "99-copy-selection-html",
+    ];
+
     // Try to remove existing menu first (in case of reload)
     try {
-      await contextMenusRemove("gpt-copy-paster");
-      await contextMenusRemove("gpt-copy-paster-from-markdown");
-      await contextMenusRemove("copy-as-markdown");
-      await contextMenusRemove("extract-selected-html");
+      for (const id of [...MENU_IDS, ...MENU_IDS_OLD]) {
+        await contextMenusRemove(id);
+      }
     } catch (e) {
       // Menu doesn't exist, that's fine
     }
 
     await contextMenusCreate({
-      id: "gpt-copy-paster",
+      id: "01-copy-office-format",
       title: "Copy as Office Format",
       contexts: ["selection"],
     });
 
     await contextMenusCreate({
-      id: "gpt-copy-paster-from-markdown",
+      id: "02-copy-office-format-markdown",
       title: "Copy as Office Format (Markdown selection)",
       contexts: ["selection"],
     });
 
     await contextMenusCreate({
-      id: "copy-as-markdown",
+      id: "03-copy-as-markdown",
       title: "Copy as Markdown",
       contexts: ["selection"],
     });
 
     await contextMenusCreate({
-      id: "extract-selected-html",
-      title: "Extract selected HTML",
+      id: "99-copy-selection-html",
+      title: "Copy selection HTML",
       contexts: ["selection"],
     });
     log("Context menu created");
@@ -206,6 +221,15 @@ async function createContextMenu() {
 
 browserApi.runtime.onInstalled.addListener(createContextMenu);
 browserApi.runtime.onStartup.addListener(createContextMenu);
+// On extension reload (e.g., about:debugging), neither onInstalled nor onStartup fires.
+// Ensure menus are created whenever the background script loads.
+try {
+  Promise.resolve(createContextMenu()).catch((e) =>
+    logError("createContextMenu (startup) failed:", e),
+  );
+} catch (e) {
+  logError("createContextMenu (startup) failed:", e);
+}
 
 browserApi.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "EXTENSION_READY") {
@@ -214,6 +238,61 @@ browserApi.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
     sendResponse({ status: "ready", version: "0.2.0" });
     return true; // Keep channel open for async response
+  }
+
+  if (msg?.type === "COF_FETCH") {
+    (async () => {
+      try {
+        const url = String(msg?.url || "");
+        if (!url) {
+          sendResponse({ ok: false, status: 0, statusText: "missing url", text: "", headers: {} });
+          return;
+        }
+
+        const optIn = msg?.options || {};
+        const method = String(optIn?.method || "GET").toUpperCase();
+        const headers = optIn?.headers && typeof optIn.headers === "object" ? optIn.headers : {};
+        const body = optIn?.body != null ? String(optIn.body) : undefined;
+        const timeoutMs = Math.max(0, Number(optIn?.timeoutMs) || 0);
+
+        const controller = timeoutMs ? new AbortController() : null;
+        const timer = timeoutMs
+          ? setTimeout(() => {
+              try {
+                controller.abort();
+              } catch (e) {}
+            }, timeoutMs)
+          : null;
+
+        const response = await fetch(url, {
+          method,
+          headers,
+          body,
+          credentials: "omit",
+          redirect: "follow",
+          signal: controller ? controller.signal : undefined,
+        }).finally(() => {
+          if (timer) clearTimeout(timer);
+        });
+        const text = await response.text();
+        sendResponse({
+          ok: response.ok,
+          status: response.status,
+          statusText: response.statusText,
+          text,
+          headers: Object.fromEntries(response.headers.entries()),
+        });
+      } catch (e) {
+        sendResponse({
+          ok: false,
+          status: 0,
+          statusText: String(e?.message || e || "fetch error"),
+          text: "",
+          headers: {},
+        });
+      }
+    })();
+    return true;
   }
 
   if (msg?.type === "WRITE_CLIPBOARD") {
@@ -263,7 +342,7 @@ browserApi.contextMenus.onClicked.addListener((info, tab) => {
   log("   Tab ID:", tab ? tab.id : "NO TAB");
   log("   Tab URL:", tab ? tab.url : "NO TAB");
 
-  if (info.menuItemId === "gpt-copy-paster") {
+  if (info.menuItemId === "01-copy-office-format" || info.menuItemId === "gpt-copy-paster") {
     // Check if tab is valid before sending message
     if (!tab || !tab.id) {
       logError("❌ Invalid tab - cannot send message");
@@ -288,7 +367,7 @@ browserApi.contextMenus.onClicked.addListener((info, tab) => {
         logError("   - Tab URL not matching manifest patterns");
         logError("   - Extension not active on this page");
       });
-  } else if (info.menuItemId === "gpt-copy-paster-from-markdown") {
+  } else if (info.menuItemId === "02-copy-office-format-markdown" || info.menuItemId === "gpt-copy-paster-from-markdown") {
     if (!tab || !tab.id) return;
     const opts =
       typeof info?.frameId === "number" ? { frameId: info.frameId } : undefined;
@@ -297,19 +376,19 @@ browserApi.contextMenus.onClicked.addListener((info, tab) => {
       { type: "COPY_OFFICE_FORMAT", mode: "markdown" },
       opts,
     ).catch((e) => logError("COPY_OFFICE_FORMAT (markdown) failed:", e));
-  } else if (info.menuItemId === "copy-as-markdown") {
+  } else if (info.menuItemId === "03-copy-as-markdown" || info.menuItemId === "copy-as-markdown") {
     if (!tab || !tab.id) return;
     const opts =
       typeof info?.frameId === "number" ? { frameId: info.frameId } : undefined;
     tabsSendMessage(tab.id, { type: "COPY_AS_MARKDOWN" }, opts).catch((e) =>
       logError("COPY_AS_MARKDOWN failed:", e),
     );
-  } else if (info.menuItemId === "extract-selected-html") {
+  } else if (info.menuItemId === "99-copy-selection-html" || info.menuItemId === "copy-as-html") {
     if (!tab || !tab.id) return;
     const opts =
       typeof info?.frameId === "number" ? { frameId: info.frameId } : undefined;
-    tabsSendMessage(tab.id, { type: "EXTRACT_SELECTED_HTML" }, opts).catch((e) =>
-      logError("EXTRACT_SELECTED_HTML failed:", e),
+    tabsSendMessage(tab.id, { type: "COPY_AS_HTML" }, opts).catch((e) =>
+      logError("COPY_AS_HTML failed:", e),
     );
   } else {
     log("⚠️ Unknown menu item clicked:", info.menuItemId);

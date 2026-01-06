@@ -13,6 +13,7 @@
   // HTTP bridge: Make HTTP request from JavaScript
   async function httpRequest(url, method, headers, body) {
     try {
+      diag("translationDebug", `wasmHttpRequest ${JSON.stringify({ method: method || "GET", url: (() => { try { const u = new URL(String(url || "")); u.search = ""; return u.toString(); } catch (e) { return String(url || ""); } })() })}`);
       const options = {
         method: method || "GET",
         headers: headers || {},
@@ -22,6 +23,7 @@
       }
       const response = await fetch(url, options);
       const responseText = await response.text();
+      diag("translationDebug", `wasmHttpResponse ${JSON.stringify({ ok: response.ok, status: response.status, statusText: response.statusText, textLen: responseText.length })}`);
       return {
         ok: response.ok,
         status: response.status,
@@ -289,6 +291,16 @@
       const r = await fetch(url);
       if (!r.ok) throw new Error(`wasm fetch failed: ${r.status}`);
       
+      const bytes = await r.arrayBuffer();
+      const module = await WebAssembly.compile(bytes);
+      const required = WebAssembly.Module.imports(module) || [];
+      const needsBindgen = required.some((i) => i?.module === "__wbindgen_placeholder__");
+      if (needsBindgen) {
+        // This wasm is built with wasm-bindgen and requires its generated JS glue, which we don't bundle yet.
+        // Callers should treat this as "WASM unavailable" and fall back to JS translation.
+        throw new Error("translation_wasm.wasm requires wasm-bindgen JS glue (imports __wbindgen_placeholder__)");
+      }
+
       // Import functions for HTTP, IndexedDB, etc.
       const imports = {
         env: {
@@ -300,7 +312,7 @@
         },
       };
       
-      const { instance } = await WebAssembly.instantiate(await r.arrayBuffer(), imports);
+      const { instance } = await WebAssembly.instantiate(module, imports);
       
       const e = instance.exports || {};
       if (e.translation_api_version && e.translation_api_version() !== 1) {
@@ -354,6 +366,7 @@
     const e = w.e;
     
     try {
+      diag("translationDebug", `wasmTranslateText ${JSON.stringify({ service, sourceLang, targetLang, textLen: String(text || "").length })}`);
       // Call Rust translate_text which handles HTTP and cache internally
       const serviceBytes = new TextEncoder().encode(service);
       const sourceLangBytes = new TextEncoder().encode(sourceLang);
@@ -392,9 +405,11 @@
       );
       e.dealloc(resultPtr, resultLen);
       
+      diag("translationDebug", `wasmTranslateOk ${JSON.stringify({ service, sourceLang, targetLang, resultLen: String(result || "").length })}`);
       return result;
     } catch (e) {
       diag("translationWasmTranslateTextError", String(e?.message || e || ""));
+      diag("translationDebug", `wasmTranslateError ${JSON.stringify({ service, sourceLang, targetLang, message: String(e?.message || e || "").slice(0, 200) })}`);
       throw e;
     }
   }
@@ -404,9 +419,7 @@
     return translateText(service, sourceLang, targetLang, html);
   }
 
-  void load().catch((e) =>
-    diag("translationWasmPreloadError", e?.message || e || ""),
-  );
+  // No eager preload: callers may fall back to JS translation when WASM isn't available.
 
   cof.translationWasm = {
     load,
@@ -444,4 +457,3 @@
     },
   };
 })();
-

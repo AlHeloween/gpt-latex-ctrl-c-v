@@ -25,8 +25,9 @@ from playwright.async_api import async_playwright, BrowserContext, Page
 
 PROJECT_ROOT = Path(__file__).parent.parent
 EXTENSION_PATH = PROJECT_ROOT / "extension"
-TEST_HTML = PROJECT_ROOT / "examples" / "gemini-conversation-test.html"
+TEST_HTML = PROJECT_ROOT / "examples" / "translation-e2e-test.html"
 CHROMIUM_EXTENSION_PATH = PROJECT_ROOT / "dist" / "chromium"
+STORAGE_KEY = "gptLatexCtrlCVConfig"
 
 
 class _QuietHandler(SimpleHTTPRequestHandler):
@@ -190,22 +191,33 @@ class TranslationE2ETester:
         self.results["errors"].append("Extension content script not loaded")
         return False
 
-    async def configure_translation(self, enabled: bool = True, service: str = "pollinations", target_lang: str = "es", intercept_copy: bool = True):
+    async def configure_translation(
+        self,
+        enabled: bool = True,
+        service: str = "pollinations",
+        target_lang: str = "ru",
+        intercept_copy: bool = False,
+    ):
         """Configure translation settings in extension storage."""
         self.log(f"Configuring translation: enabled={enabled}, service={service}, lang={target_lang}", "info")
         
         config = {
+            "debug": {"logsEnabled": True},
             "translation": {
                 "enabled": enabled,
                 "service": service,
                 "defaultLanguage": target_lang,
-                "targetLanguages": [target_lang],
-                "translateFormulas": False
+                "targetLanguages": ["en", "id", "ar", "zh-CN", "ru"],
+                "translateFormulas": False,
+                "timeoutMs": 60000,
+                "maxConcurrency": 6,
+                "useWasm": False,
             },
             "keyboard": {
                 "interceptCopy": intercept_copy
             },
-            "apiKeys": {}
+            "apiKeys": {"google": "", "microsoft": "", "chatgpt": "", "gemini": "", "pollinations": "", "custom": ""},
+            "customApi": {"endpoint": "", "headers": {}, "method": "POST", "payloadFormat": {}},
         }
 
         if self.browser_name == "chromium":
@@ -216,7 +228,7 @@ class TranslationE2ETester:
                     const chrome = globalThis.chrome;
                     if (!chrome?.storage) throw new Error("chrome.storage unavailable");
                     return new Promise((resolve, reject) => {
-                        chrome.storage.local.set(config, () => {
+                        chrome.storage.local.set({ ["gptLatexCtrlCVConfig"]: config }, () => {
                             const err = chrome.runtime?.lastError;
                             if (err) reject(new Error(err.message));
                             else resolve();
@@ -234,7 +246,7 @@ class TranslationE2ETester:
                     const browser = globalThis.browser || globalThis.chrome;
                     if (!browser?.storage) throw new Error("browser.storage unavailable");
                     return new Promise((resolve, reject) => {
-                        browser.storage.local.set(config, () => {
+                        browser.storage.local.set({ ["gptLatexCtrlCVConfig"]: config }, () => {
                             const err = browser.runtime?.lastError;
                             if (err) reject(new Error(err.message));
                             else resolve();
@@ -306,7 +318,43 @@ class TranslationE2ETester:
             self.log(f"Ctrl-C trigger failed: {e}", "error")
             return False
 
-    async def verify_clipboard_content(self, expected_token: str, before_sha: str, expect_translated: bool = False) -> dict:
+    async def trigger_copy_office_format(self) -> bool:
+        """Trigger the deterministic copy pipeline via extension message."""
+        self.log("Triggering Copy as Office Format (html)...", "info")
+        if self.browser_name != "chromium":
+            self.log("Office copy trigger is only implemented for chromium in this test", "warning")
+            return False
+        try:
+            await self.service_worker.evaluate(
+                """
+                async ({ message }) => {
+                    const chrome = globalThis.chrome;
+                    if (!chrome?.tabs) throw new Error("chrome.tabs unavailable");
+                    function call(fn, ...args) {
+                        return new Promise((resolve, reject) => {
+                            fn(...args, (result) => {
+                                const err = chrome.runtime?.lastError;
+                                if (err) reject(new Error(err.message || String(err)));
+                                else resolve(result);
+                            });
+                        });
+                    }
+                    const tabs = await call(chrome.tabs.query, { active: true, currentWindow: true });
+                    const tabId = tabs && tabs[0] ? tabs[0].id : null;
+                    if (!tabId) throw new Error("no active tab");
+                    const resp = await call(chrome.tabs.sendMessage, tabId, message);
+                    return resp || null;
+                }
+                """,
+                {"message": {"type": "COPY_OFFICE_FORMAT", "mode": "html"}},
+            )
+            self.log("Copy request completed", "success")
+            return True
+        except Exception as e:
+            self.log(f"Copy trigger failed: {e}", "error")
+            return False
+
+    async def verify_clipboard_content(self, expected_token: str, before_sha: str, expect_translated: bool = False, target_lang: str = "") -> dict:
         """Verify OS clipboard content."""
         self.log("Verifying OS clipboard content...", "info")
 
@@ -315,6 +363,10 @@ class TranslationE2ETester:
             "has_html": False,
             "has_plain_text": False,
             "is_translated": False,
+            "has_cyrillic": False,
+            "has_cyrillic_fragment": False,
+            "plain_text": "",
+            "fragment": "",
             "error": None,
         }
 
@@ -345,21 +397,31 @@ class TranslationE2ETester:
 
         verification["has_content"] = True
         plain_text = str(last.get("plain_text", ""))
+        verification["plain_text"] = plain_text
         if plain_text:
             verification["has_plain_text"] = True
 
         fragment = str(last.get("fragment", ""))
+        verification["fragment"] = fragment
         if fragment:
             verification["has_html"] = True
+
+        if plain_text:
+            verification["has_cyrillic"] = any("\u0400" <= ch <= "\u04FF" for ch in plain_text)
+        if fragment:
+            verification["has_cyrillic_fragment"] = any("\u0400" <= ch <= "\u04FF" for ch in fragment)
 
         # Simple check: if translated, content should be different from original
         # (This is a basic check - real translation would require language detection)
         if expect_translated and plain_text:
-            # Check for common Spanish words as indicator
-            spanish_indicators = ["el", "la", "de", "que", "y", "a", "en", "un", "es", "se", "no", "te", "lo", "le"]
-            word_count = sum(1 for word in spanish_indicators if word in plain_text.lower().split())
-            if word_count > 2:
-                verification["is_translated"] = True
+            if str(target_lang or "").lower().startswith("ru"):
+                verification["is_translated"] = verification["has_cyrillic_fragment"] or verification["has_cyrillic"]
+            else:
+                # Best-effort: check for common Spanish words as indicator
+                spanish_indicators = ["el", "la", "de", "que", "y", "a", "en", "un", "es", "se", "no", "te", "lo", "le"]
+                word_count = sum(1 for word in spanish_indicators if word in plain_text.lower().split())
+                if word_count > 2:
+                    verification["is_translated"] = True
 
         if expected_token and expected_token not in plain_text:
             verification["error"] = "clipboard did not update with expected token"
@@ -367,7 +429,15 @@ class TranslationE2ETester:
 
         return verification
 
-    async def run_test(self, test_name: str, selector: str, enable_translation: bool = True, expect_translated: bool = False):
+    async def run_test(
+        self,
+        test_name: str,
+        selector: str,
+        enable_translation: bool = True,
+        expect_translated: bool = False,
+        service: str = "pollinations",
+        target_lang: str = "ru",
+    ):
         """Run a single translation E2E test."""
         print(f"\n{'='*60}")
         print(f"TEST: {test_name}")
@@ -385,7 +455,7 @@ class TranslationE2ETester:
                 return False
             
             # Configure translation
-            await self.configure_translation(enabled=enable_translation, intercept_copy=enable_translation)
+            await self.configure_translation(enabled=enable_translation, service=service, target_lang=target_lang, intercept_copy=False)
             
             # Select text
             selected = await self.select_text_automatically(selector)
@@ -394,7 +464,7 @@ class TranslationE2ETester:
                 self.results["errors"].append(f"{test_name}: No text selected")
                 return False
 
-            token = (selected.strip().splitlines() or [""])[0][:64]
+            token = "COF_E2E_TOKEN_123456"
             before_sha = ""
             if os.name == "nt":
                 try:
@@ -403,8 +473,8 @@ class TranslationE2ETester:
                 except Exception:
                     before_sha = ""
 
-            # Trigger Ctrl-C
-            if not await self.trigger_ctrl_c():
+            # Trigger deterministic extension copy (no native copy triggers).
+            if not await self.trigger_copy_office_format():
                 self.results["tests_failed"] += 1
                 return False
             
@@ -413,6 +483,7 @@ class TranslationE2ETester:
                 expected_token=token,
                 before_sha=before_sha,
                 expect_translated=expect_translated,
+                target_lang=target_lang,
             )
             
             # Check results
@@ -429,9 +500,21 @@ class TranslationE2ETester:
                     passed = False
                     print("✗ Clipboard missing HTML content")
                 elif expect_translated and not verification["is_translated"]:
-                    # Translation check is best-effort (may not always detect)
-                    self.log("Translation may have occurred (detection uncertain)", "warning")
-            
+                    passed = False
+                    print("✗ Expected translation output, but it was not detected")
+                elif not expect_translated and (verification["has_cyrillic"] or verification["has_cyrillic_fragment"]) and str(target_lang or "").lower().startswith("ru"):
+                    passed = False
+                    print("✗ Unexpected Cyrillic output when translation disabled")
+                else:
+                    # Cheap additional integrity checks for this fixture.
+                    frag = str(verification.get("fragment") or "")
+                    if "COF_E2E_TOKEN_123456" not in frag:
+                        passed = False
+                        print("✗ Clipboard HTML missing token")
+                    if "def hello" not in frag:
+                        passed = False
+                        print("✗ Clipboard HTML missing code block")
+
             if passed:
                 self.log(f"TEST PASSED: {test_name}", "success")
                 self.results["tests_passed"] += 1
@@ -461,21 +544,28 @@ class TranslationE2ETester:
         
         try:
             await self.setup()
+
+            service = getattr(self, "_service", "pollinations")
+            lang = getattr(self, "_target_lang", "ru")
             
-            # Test 1: Translation enabled - Ctrl-C should translate
+            # Test 1: Translation enabled - Office copy should translate
             await self.run_test(
-                "Translation on Ctrl-C (Enabled)",
-                "user-query-content:first-of-type",
+                "Translation on Office Copy (Enabled)",
+                "#sel",
                 enable_translation=True,
                 expect_translated=True,
+                service=service,
+                target_lang=lang,
             )
             
-            # Test 2: Translation disabled - Ctrl-C should do normal copy
+            # Test 2: Translation disabled - Office copy should preserve original
             await self.run_test(
-                "Translation on Ctrl-C (Disabled)",
-                "user-query-content:first-of-type",
+                "Translation on Office Copy (Disabled)",
+                "#sel",
                 enable_translation=False,
                 expect_translated=False,
+                service=service,
+                target_lang=lang,
             )
              
             # Print summary
@@ -546,6 +636,8 @@ async def main():
                         help="Browser to use for testing (default: chromium)")
     parser.add_argument("--headless", action="store_true", help="Run in headless mode")
     parser.add_argument("--debug", action="store_true", help="Enable debug output")
+    parser.add_argument("--service", default="pollinations", help="Translation service (default: pollinations)")
+    parser.add_argument("--target-lang", default="ru", help="Target language (default: ru)")
     args = parser.parse_args()
     
     if not EXTENSION_PATH.exists():
@@ -563,6 +655,8 @@ async def main():
         headless=args.headless,
         debug=args.debug
     )
+    tester._service = args.service
+    tester._target_lang = args.target_lang
     await tester.run_all_tests()
     
     sys.exit(0 if tester.results["tests_failed"] == 0 else 1)

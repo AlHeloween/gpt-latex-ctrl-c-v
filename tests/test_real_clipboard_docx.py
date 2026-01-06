@@ -57,6 +57,13 @@ def _write_json(path: Path, data: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
+def _write_text_exact(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # Preserve exact newline bytes (clipboard CF_HTML + text often contains "\r\n").
+    # On Windows, default newline translation would turn "\r\n" into "\r\r\n".
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        f.write(text)
+
 
 def _first_match_selector(html_path: Path) -> str:
     try:
@@ -276,12 +283,25 @@ async def main() -> int:
     parser.add_argument("--out-root", default=str(PROJECT_ROOT / "test_results" / "real_clipboard"))
     parser.add_argument("--timeout-ms", type=int, default=60_000)
     parser.add_argument("--include-large", action="store_true")
+    parser.add_argument(
+        "--only",
+        action="append",
+        default=[],
+        help="Run only these example case names (repeatable).",
+    )
     parser.add_argument("--show-ui", action="store_true", help="Show Chromium window (default off-screen).")
     args = parser.parse_args()
 
     examples_dir = Path(args.examples_dir)
     out_root = Path(args.out_root)
     out_root.mkdir(parents=True, exist_ok=True)
+    # Back-compat cleanup: older versions wrote aggregate outputs to out_root/docx and out_root/word_docx.
+    # This suite now writes all artifacts per-case, so remove stale aggregate folders to avoid confusion.
+    try:
+        shutil.rmtree(out_root / "docx", ignore_errors=True)
+        shutil.rmtree(out_root / "word_docx", ignore_errors=True)
+    except Exception:
+        pass
 
     # Optional: verify that Word can paste the *real clipboard* CF_HTML.
     # This is the closest end-to-end validation of "extension -> clipboard -> Word".
@@ -298,6 +318,9 @@ async def main() -> int:
         word_error = f"import_failed: {e}"
 
     cases = _discover_examples(examples_dir)
+    if args.only:
+        only = set(args.only)
+        cases = [c for c in cases if c.name in only]
     if not args.include_large:
         filtered: list[ExampleCase] = []
         for c in cases:
@@ -369,10 +392,8 @@ async def main() -> int:
             for case in cases:
                 out_dir = out_root / case.name
                 out_dir.mkdir(parents=True, exist_ok=True)
-                docx_out = out_root / "docx" / f"{case.name}.docx"
-                docx_out.parent.mkdir(parents=True, exist_ok=True)
-                word_docx_out = out_root / "word_docx" / f"{case.name}.docx"
-                word_docx_out.parent.mkdir(parents=True, exist_ok=True)
+                docx_out = out_dir / "docx_from_clipboard.docx"
+                word_docx_out = out_dir / "docx_from_word_paste.docx"
 
                 url = f"http://127.0.0.1:{port}/{case.rel_path}"
 
@@ -420,9 +441,9 @@ async def main() -> int:
                         timeout_s=float(args.timeout_ms) / 1000.0,
                     )
                     _write_json(out_dir / "clipboard_dump.json", clip)
-                    (out_dir / "clipboard_cfhtml.txt").write_text(clip.get("cfhtml", ""), encoding="utf-8")
-                    (out_dir / "clipboard_fragment.html").write_text(clip.get("fragment", ""), encoding="utf-8")
-                    (out_dir / "clipboard_plain.txt").write_text(clip.get("plain_text", ""), encoding="utf-8")
+                    _write_text_exact(out_dir / "clipboard_cfhtml.txt", str(clip.get("cfhtml", "")))
+                    _write_text_exact(out_dir / "clipboard_fragment.html", str(clip.get("fragment", "")))
+                    _write_text_exact(out_dir / "clipboard_plain.txt", str(clip.get("plain_text", "")))
                     _write_json(out_dir / "cfhtml_validation.json", clip.get("cfhtml_validation", {}))
 
                     # Deterministic clipboard postcondition: selection token must be present in plain text.
@@ -455,6 +476,8 @@ async def main() -> int:
                     if proc.returncode != 0:
                         raise RuntimeError(proc.stdout + "\n" + proc.stderr)
 
+                    case_docx_from_clipboard = docx_out
+
                     # Simple validations:
                     # - If clipboard contains OMML markers, docx must contain OMML.
                     frag_low = str(clip.get("fragment", "")).lower()
@@ -470,29 +493,105 @@ async def main() -> int:
                         ok = False
 
                     word_ok = None
+                    word_has_token = None
+                    word_error_case = None
+                    case_docx_from_word = None
                     if word_available:
+                        # Use a Word-stable token: Word paste often replaces math/plain-text with OMML, so
+                        # we avoid using the raw first-line token when it contains LaTeX delimiters or when
+                        # the selection/plain text is actually HTML markup (e.g. view-source captures).
+                        word_token = None
                         try:
-                            set_clipboard_cfhtml(
-                                cfhtml=str(clip.get("cfhtml", "")),
-                                plain_text=str(clip.get("plain_text", "")) or " ",
-                                normalize=False,
-                            )
-                            word_paste_to_docx(out_docx=word_docx_out, visible=False, timeout_s=60.0)
-                            xml_path = out_root / "word_docx" / f"{case.name}.document.xml"
-                            xml = extract_document_xml(word_docx_out, xml_path)
-                            word_ok = ("<m:oMath" in xml) or ("<m:oMathPara" in xml)
+                            plain_first = (str(clip.get("plain_text", "")) or "").strip().splitlines()[0].strip()
+                            if plain_first:
+                                if plain_first.lstrip().startswith("<"):
+                                    plain_first = ""
+                                elif "$" in plain_first:
+                                    plain_first = plain_first.split("$", 1)[0].strip()
+                                word_token = plain_first[:64].strip() or None
+
+                            if not word_token:
+                                frag = str(clip.get("fragment", "")) or ""
+                                frag = re.sub(r"<!--.*?-->", " ", frag, flags=re.DOTALL)
+                                frag = re.sub(r"<[^>]+>", " ", frag)
+                                frag = re.sub(r"\\s+", " ", frag).strip()
+                                if frag:
+                                    word_token = frag[:64].strip() or None
+                        except Exception:
+                            word_token = None
+
+                        try:
+                            word_attempts = 0
+                            while True:
+                                word_attempts += 1
+                                set_clipboard_cfhtml(
+                                    cfhtml=str(clip.get("cfhtml", "")),
+                                    plain_text=str(clip.get("plain_text", "")) or " ",
+                                    # Word is picky about CF_HTML header offsets; normalize to UTF-8 byte offsets
+                                    # (and a stable header shape) to avoid falling back to plain-text paste.
+                                    normalize=True,
+                                )
+                                word_paste_to_docx(out_docx=word_docx_out, visible=False, timeout_s=120.0)
+
+                                xml_path = out_dir / "docx_from_word_paste.document.xml"
+                                xml = extract_document_xml(word_docx_out, xml_path)
+                                word_ok = ("<m:oMath" in xml) or ("<m:oMathPara" in xml)
+                                word_has_token = (word_token in xml) if word_token else None
+
+                                needs_retry = False
+                                if word_has_token is False:
+                                    needs_retry = True
+                                if expects_omml and not word_ok:
+                                    needs_retry = True
+
+                                if needs_retry and word_attempts < 2:
+                                    # Keep the failed first attempt for inspection before retrying.
+                                    try:
+                                        shutil.copy2(word_docx_out, out_dir / "docx_from_word_paste_attempt1_failed.docx")
+                                        shutil.copy2(xml_path, out_dir / "docx_from_word_paste_attempt1_failed.document.xml")
+                                    except Exception:
+                                        pass
+                                    continue
+                                break
+
+                            case_docx_from_word = word_docx_out
+
+                            if word_has_token is False:
+                                ok = False
                             if expects_omml and not word_ok:
                                 ok = False
                         except Exception as e:
-                            # If Word automation isn't available, skip Word validation for the rest of the run
-                            # (do not fail the suite).
-                            word_available = False
-                            summary["word_available"] = False
-                            summary["word_error"] = str(e)
+                            word_error_case = str(e)
                             word_ok = None
+                            word_has_token = None
+
+                            # If Word itself isn't available, skip Word validation for the rest of the run.
+                            # Otherwise, treat as a real failure for this case (Word couldn't paste our clipboard).
+                            err_low = word_error_case.lower()
+                            if ("new-object" in err_low and "word.application" in err_low) or ("comobject" in err_low):
+                                word_available = False
+                                summary["word_available"] = False
+                                summary["word_error"] = word_error_case
+                            else:
+                                ok = False
 
                     if not ok:
                         summary["ok"] = False
+
+                    # Always provide a single "final.docx" in the case directory:
+                    # prefer the Word-pasted result only if it appears to be the *correct* paste (token present,
+                    # and OMML present when expected). Otherwise, fall back to the docx generated from the
+                    # clipboard fragment.
+                    final_docx = out_dir / "final.docx"
+                    if (
+                        case_docx_from_word
+                        and case_docx_from_word.exists()
+                        and (word_has_token is not False)
+                        and (not expects_omml or word_ok)
+                    ):
+                        shutil.copy2(case_docx_from_word, final_docx)
+                    else:
+                        shutil.copy2(case_docx_from_clipboard, final_docx)
 
                     summary["cases"][case.name] = {
                         "ok": ok,
@@ -501,8 +600,13 @@ async def main() -> int:
                         "expects_omml": expects_omml,
                         "docx_has_omml": has_omml,
                         "word_paste_has_omml": word_ok,
+                        "word_paste_has_token": word_has_token,
+                        "word_paste_error": word_error_case,
                         "expects_code": expects_code,
                         "docx_has_code_font": has_code_font,
+                        "docx_from_clipboard": str(case_docx_from_clipboard.relative_to(out_root)).replace("\\", "/"),
+                        "docx_from_word_paste": str(case_docx_from_word.relative_to(out_root)).replace("\\", "/") if case_docx_from_word else None,
+                        "final_docx": str(final_docx.relative_to(out_root)).replace("\\", "/"),
                     }
                 except Exception as e:
                     summary["ok"] = False

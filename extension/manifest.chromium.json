@@ -3,7 +3,7 @@
   "name": "GPT LATEX Ctrl-C Ctrl-V",
   "version": "0.2.0",
   "description": "Copy browser selections to clipboard in Office-compatible format, preserving formatting and converting LaTeX formulas to Microsoft Equation (OMML) format.",
-  "permissions": ["contextMenus", "activeTab", "clipboardWrite", "tabs", "offscreen"],
+  "permissions": ["contextMenus", "activeTab", "clipboardWrite", "storage", "downloads", "tabs", "offscreen"],
   "host_permissions": ["<all_urls>"],
   "background": { "service_worker": "background.js" },
   "content_scripts": [
@@ -18,6 +18,10 @@
         "lib/cof-xslt.js",
         "lib/cof-clipboard.js",
         "lib/cof-ui.js",
+        "lib/cof-storage.js",
+        "lib/cof-anchor.js",
+        "lib/cof-analysis.js",
+        "lib/cof-translate.js",
         "content-script.js"
       ],
       "run_at": "document_idle",
@@ -30,5 +34,10 @@
       "matches": ["<all_urls>"]
     }
   ],
-  "icons": { "48": "icons/icon48.png", "96": "icons/icon96.png" }
+  "icons": { "48": "icons/icon48.png", "96": "icons/icon96.png" },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": { "48": "icons/icon48.png", "96": "icons/icon96.png" }
+  },
+  "options_ui": { "page": "options.html", "open_in_tab": true }
 }

@@ -78,6 +78,7 @@ The extension enables users to copy browser selections as Office-compatible HTML
 **cof-selection.js**
 - Extracts HTML and text from user selection using `Range.cloneContents()`
 - Handles special cases (e.g., "View Source" pages)
+- Handles multi-range selections by preferring a single best range or deduping overlapping ranges (prevents duplicated/truncated copies)
 - Returns `{html, text}` object
 
 **cof-wasm.js**
@@ -94,6 +95,7 @@ The extension enables users to copy browser selections as Office-compatible HTML
 - Attempts direct clipboard write via `navigator.clipboard.write()`
 - Falls back to background script if direct write fails
 - Supports both HTML and plain text modes
+- Writes `text/html` as the selection fragment (no extra `<html>/<body>` wrapping added by the extension)
 
 **cof-ui.js**
 - Displays toast notifications for success/failure
@@ -194,7 +196,7 @@ The build process transforms source code into distributable packages:
 2. **Size Validation**: Ensure content script stays within 20KB budget
 3. **Package Extension**: Create XPI (Firefox) or Chromium build
 
-See [diagram.md](../diagram.md) for detailed build workflow diagrams.
+See [diagram.md](diagram.md) for detailed build workflow diagrams.
 
 ### Build Commands
 
@@ -263,7 +265,7 @@ uv run python tests/test_real_clipboard_docx.py --out-root test_results/real_cli
 - `test_results/real_clipboard/`: Clipboard dumps and validation reports
 - `test_results/real_clipboard_markdown/`: Markdown clipboard artifacts
 
-See [diagram.md](../diagram.md) for detailed testing workflow diagrams.
+See [diagram.md](diagram.md) for detailed testing workflow diagrams.
 
 ## Key Design Decisions
 
@@ -405,7 +407,7 @@ See [debugging/](debugging/) for detailed debugging guides.
 
 ## Related Documentation
 
-- [diagram.md](../diagram.md): Visual workflow diagrams
+- [diagram.md](diagram.md): Visual workflow diagrams
 - [AGENTS.md](../AGENTS.md): Development guidelines and rules
 - [README.md](../README.md): Quick start guide
 - [docs/testing/README.md](testing/README.md): Testing documentation

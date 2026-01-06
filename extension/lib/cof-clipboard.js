@@ -4,6 +4,18 @@
   const core = cof.core || {};
   const root = core.root;
 
+  function dbg(stage, details) {
+    try {
+      const d =
+        details && typeof details === "object"
+          ? JSON.stringify(details)
+          : String(details ?? "");
+      diag("clipboardDebug", `${String(stage || "")} ${d}`.trim());
+    } catch (e) {
+      diag("clipboardDebug", `${String(stage || "")} [unserializable]`);
+    }
+  }
+
   async function bgSend(payload) {
     try {
       if (!core.browserApi?.runtime?.sendMessage) return null;
@@ -14,65 +26,69 @@
     }
   }
 
-  function wrapHtmlForWord(htmlFragment) {
-    // Wrap HTML fragment in Word-compatible HTML document structure
-    // This improves compatibility with Word and Google Docs
-    const htmlBody = String(htmlFragment || "").trim();
-    
-    // Check if already wrapped
-    if (htmlBody.toLowerCase().includes("<html") && htmlBody.toLowerCase().includes("<body")) {
-      return htmlBody;
-    }
-    
-    // Wrap in proper HTML structure with Word-compatible meta tags
-    return `<!DOCTYPE html>
-<html xmlns:o="urn:schemas-microsoft-com:office:office"
-      xmlns:w="urn:schemas-microsoft-com:office:word"
-      xmlns:m="http://schemas.microsoft.com/office/2004/12/omml"
-      xmlns="http://www.w3.org/1999/xhtml">
-<head>
-<meta charset="utf-8">
-<meta name="ProgId" content="Word.Document">
-<meta name="Generator" content="Microsoft Word">
-<meta name="Originator" content="Microsoft Word">
-<!--[if gte mso 9]><xml>
-<w:WordDocument>
-<w:View>Print</w:View>
-<w:Zoom>90</w:Zoom>
-<w:DoNotOptimizeForBrowser/>
-</w:WordDocument>
-</xml><![endif]-->
-</head>
-<body>
-${htmlBody}
-</body>
-</html>`;
-  }
-
   async function writeHtml({ html, text }) {
-    // Transpile HTML to Word-compatible format
-    const wordCompatibleHtml = wrapHtmlForWord(html);
+    // IMPORTANT: write the selection fragment as-is. The browser/OS will wrap this into CF_HTML
+    // with StartFragment/EndFragment markers. Wrapping again into a full HTML document can cause
+    // nested <html>/<body> and has been observed to behave poorly in some paste targets.
+    const fragmentHtml = String(html || "");
+    dbg("writeHtml:start", { htmlLen: fragmentHtml.length, textLen: String(text || "").length });
     
     if (navigator?.clipboard?.write && typeof ClipboardItem !== "undefined") {
       try {
         await navigator.clipboard.write([
           new ClipboardItem({
-            "text/html": new Blob([wordCompatibleHtml], { type: "text/html" }),
+            "text/html": new Blob([fragmentHtml], { type: "text/html" }),
             "text/plain": new Blob([text || ""], { type: "text/plain" }),
           }),
         ]);
+        dbg("writeHtml:ok", { via: "clipboard-api" });
         return { ok: true, via: "clipboard-api" };
       } catch (e) {
         diag("copyOfficeFormatLastClipboardWriteError", e?.message || e || "");
+        dbg("writeHtml:clipboardApiError", String(e?.message || e || ""));
       }
     }
 
     const r = await bgSend({
       type: "WRITE_CLIPBOARD",
       mode: "html",
-      html: String(html || ""),
+      html: fragmentHtml,
       text: String(text || ""),
     });
+    dbg("writeHtml:bgResponse", r || null);
+    if (r?.ok) return { ok: true, via: "background" };
+    const d = r?.diag ? ` diag=${JSON.stringify(r.diag)}` : "";
+    return { ok: false, error: String(r?.error || "Clipboard write unavailable.") + d };
+  }
+
+  async function writeHtmlExact({ html, text }) {
+    const exactHtml = String(html || "");
+    const t = String(text || "");
+    dbg("writeHtmlExact:start", { htmlLen: exactHtml.length, textLen: t.length });
+
+    if (navigator?.clipboard?.write && typeof ClipboardItem !== "undefined") {
+      try {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            "text/html": new Blob([exactHtml], { type: "text/html" }),
+            "text/plain": new Blob([t], { type: "text/plain" }),
+          }),
+        ]);
+        dbg("writeHtmlExact:ok", { via: "clipboard-api" });
+        return { ok: true, via: "clipboard-api" };
+      } catch (e) {
+        diag("copyOfficeFormatLastClipboardWriteError", e?.message || e || "");
+        dbg("writeHtmlExact:clipboardApiError", String(e?.message || e || ""));
+      }
+    }
+
+    const r = await bgSend({
+      type: "WRITE_CLIPBOARD",
+      mode: "html",
+      html: exactHtml,
+      text: t,
+    });
+    dbg("writeHtmlExact:bgResponse", r || null);
     if (r?.ok) return { ok: true, via: "background" };
     const d = r?.diag ? ` diag=${JSON.stringify(r.diag)}` : "";
     return { ok: false, error: String(r?.error || "Clipboard write unavailable.") + d };
@@ -80,21 +96,25 @@ ${htmlBody}
 
   async function writeText(text) {
     const t = String(text || "");
+    dbg("writeText:start", { textLen: t.length });
 
     if (navigator?.clipboard?.writeText) {
       try {
         await navigator.clipboard.writeText(t);
+        dbg("writeText:ok", { via: "clipboard-api" });
         return { ok: true, via: "clipboard-api" };
       } catch (e) {
         diag("copyOfficeFormatLastClipboardWriteError", e?.message || e || "");
+        dbg("writeText:clipboardApiError", String(e?.message || e || ""));
       }
     }
 
     const r = await bgSend({ type: "WRITE_CLIPBOARD", mode: "text", text: t });
+    dbg("writeText:bgResponse", r || null);
     if (r?.ok) return { ok: true, via: "background" };
     const d = r?.diag ? ` diag=${JSON.stringify(r.diag)}` : "";
     return { ok: false, error: String(r?.error || "Clipboard writeText unavailable.") + d };
   }
 
-  cof.clipboard = { writeHtml, writeText };
+  cof.clipboard = { writeHtml, writeHtmlExact, writeText };
 })();

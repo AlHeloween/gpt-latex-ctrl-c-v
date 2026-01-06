@@ -92,7 +92,7 @@ def test_anchor_restoration():
     # Simulate anchoring: replace content with anchors
     html_with_formula = '<p>Text <math>x+1</math> end</p>'
     formula_content = "<math>x+1</math>"
-    anchor = "<!--FORMULA_ANCHOR_0-->"
+    anchor = "[[COF_FORMULA_0]]"
     anchored_html = html_with_formula.replace(formula_content, anchor)
 
     # Verify anchoring
@@ -117,16 +117,16 @@ def test_multiple_anchors():
     # Simulate anchoring
     anchored = html
     for i, formula in enumerate(formulas):
-        anchor = f"<!--FORMULA_ANCHOR_{i}-->"
+        anchor = f"[[COF_FORMULA_{i}]]"
         anchored = anchored.replace(formula, anchor, 1)
 
     for i, code in enumerate(codes):
-        anchor = f"<!--CODE_ANCHOR_{i}-->"
+        anchor = f"[[COF_CODE_{i}]]"
         anchored = anchored.replace(code, anchor, 1)
 
     # Count anchors
-    formula_anchors = len(re.findall(r"<!--FORMULA_ANCHOR_\d+-->", anchored))
-    code_anchors = len(re.findall(r"<!--CODE_ANCHOR_\d+-->", anchored))
+    formula_anchors = len(re.findall(r"\[\[COF_FORMULA_\d+\]\]", anchored))
+    code_anchors = len(re.findall(r"\[\[COF_CODE_\d+\]\]", anchored))
 
     assert formula_anchors == len(formulas), f"Expected {len(formulas)} formula anchors, got {formula_anchors}"
     assert code_anchors == len(codes), f"Expected {len(codes)} code anchors, got {code_anchors}"

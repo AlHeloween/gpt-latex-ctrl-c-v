@@ -74,19 +74,19 @@ function testAnchorRestoration() {
   const testCases = [
     {
       name: "Restore single formula",
-      anchored: '<p>Text <!--FORMULA_ANCHOR_0--> end</p>',
+      anchored: "<p>Text [[COF_FORMULA_0]] end</p>",
       anchors: { formulas: ['<math>x+1</math>'], codes: [] },
       expectRestored: '<p>Text <math>x+1</math> end</p>',
     },
     {
       name: "Restore single code block",
-      anchored: '<p>Text <!--CODE_ANCHOR_0--> end</p>',
+      anchored: "<p>Text [[COF_CODE_0]] end</p>",
       anchors: { formulas: [], codes: ['<pre>code</pre>'] },
       expectRestored: '<p>Text <pre>code</pre> end</p>',
     },
     {
       name: "Restore multiple anchors",
-      anchored: '<p><!--FORMULA_ANCHOR_0--> text <!--CODE_ANCHOR_0--> text <!--FORMULA_ANCHOR_1--></p>',
+      anchored: "<p>[[COF_FORMULA_0]] text [[COF_CODE_0]] text [[COF_FORMULA_1]]</p>",
       anchors: { formulas: ['<math>a</math>', '<math>b</math>'], codes: ['<pre>code</pre>'] },
       expectRestored: '<p><math>a</math> text <pre>code</pre> text <math>b</math></p>',
     },

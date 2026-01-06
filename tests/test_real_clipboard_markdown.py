@@ -56,6 +56,13 @@ def _write_json(path: Path, data: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
+def _write_text_exact(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # Preserve exact newline bytes (clipboard text often contains "\r\n").
+    # On Windows, default newline translation would turn "\r\n" into "\r\r\n".
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        f.write(text)
+
 
 def _first_match_selector(html_path: Path) -> str:
     try:
@@ -314,7 +321,7 @@ async def main() -> int:
                     clip, poll_log = _wait_until_clipboard_contains(token, timeout_s=20.0, poll_s=0.2)
                     _write_json(out_dir / "clipboard_dump.json", clip)
                     _write_json(out_dir / "clipboard_poll_log.json", poll_log)
-                    (out_dir / "clipboard_plain.txt").write_text(clip.get("plain_text", ""), encoding="utf-8")
+                    _write_text_exact(out_dir / "clipboard_plain.txt", str(clip.get("plain_text", "")))
 
                     plain = str(clip.get("plain_text", ""))
                     ok = token in plain and len(plain.strip()) > len(token)

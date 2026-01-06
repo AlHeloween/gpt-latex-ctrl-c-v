@@ -38,3 +38,5 @@ uv run python tests/test_real_clipboard_markdown.py --out-root test_results/real
 ```
 
 Both tests only load `examples/*.html` and store per-case artifacts under `test_results/` (clipboard dump, extracted fragment/text, and poll logs).
+
+Note: clipboard text artifacts are written with exact newline bytes preserved (Windows clipboard commonly uses `\r\n`). This avoids misleading extra blank lines when inspecting Markdown dumps on disk.

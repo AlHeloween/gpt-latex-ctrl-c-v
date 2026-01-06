@@ -30,7 +30,7 @@ Click "Check Extension Status" button. You should see:
 
 Press F12 and check the Console tab for:
 
-- `[Copy as Office Format]` messages
+- `[GPT LATEX Ctrl-C Ctrl-V]` messages
 - Any red error messages
 
 ## What to Look For

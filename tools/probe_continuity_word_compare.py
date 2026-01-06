@@ -197,7 +197,9 @@ async def main() -> int:
         raise SystemExit("Missing lastClipboard.cfhtml in payload (copy failed or bridge truncated).")
 
     (out_dir / "wrapped.html").write_text(wrapped, encoding="utf-8")
-    (out_dir / "cfhtml.txt").write_text(cfhtml, encoding="utf-8")
+    # Preserve exact newline bytes (CF_HTML typically contains "\r\n").
+    with open(out_dir / "cfhtml.txt", "w", encoding="utf-8", newline="") as f:
+        f.write(cfhtml)
 
     # 1) Paste into Word via COM.
     clip_info = set_clipboard_cfhtml(cfhtml=cfhtml, plain_text=plain if plain else " ", normalize=True)

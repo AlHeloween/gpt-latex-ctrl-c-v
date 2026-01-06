@@ -5,6 +5,7 @@ Policy (deterministic):
 - Always keep `test_results/docx/` (generated from examples).
 - Keep the newest directory matching `real_clipboard*` excluding `real_clipboard_markdown*`.
 - Keep the newest directory matching `real_clipboard_markdown*`.
+- Keep the newest directory matching `clipboard_direct*`.
 - Delete everything else under `test_results/` (directories and files).
 
 Usage:
@@ -74,13 +75,17 @@ def main() -> int:
         and not p.name.startswith("real_clipboard_markdown")
     ]
     md_dirs = [p for p in entries if p.is_dir() and p.name.startswith("real_clipboard_markdown")]
+    direct_dirs = [p for p in entries if p.is_dir() and p.name.startswith("clipboard_direct")]
 
     newest_clip = _pick_newest(clipboard_dirs)
     newest_md = _pick_newest(md_dirs)
+    newest_direct = _pick_newest(direct_dirs)
     if newest_clip:
         keep.add(newest_clip)
     if newest_md:
         keep.add(newest_md)
+    if newest_direct:
+        keep.add(newest_direct)
 
     removed: list[str] = []
     kept: list[str] = sorted(str(p.relative_to(PROJECT_ROOT)) for p in keep)

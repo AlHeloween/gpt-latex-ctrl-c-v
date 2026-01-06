@@ -79,13 +79,13 @@ def test_anchor_translate_restore_pipeline():
     codes = ["<pre>code</pre>"]
     anchored_html = original_html
     for i, formula in enumerate(formulas):
-        anchored_html = anchored_html.replace(formula, f"<!--FORMULA_ANCHOR_{i}-->", 1)
+        anchored_html = anchored_html.replace(formula, f"[[COF_FORMULA_{i}]]", 1)
     for i, code in enumerate(codes):
-        anchored_html = anchored_html.replace(code, f"<!--CODE_ANCHOR_{i}-->", 1)
+        anchored_html = anchored_html.replace(code, f"[[COF_CODE_{i}]]", 1)
 
     # Verify anchoring
-    assert "<!--FORMULA_ANCHOR_0-->" in anchored_html
-    assert "<!--CODE_ANCHOR_0-->" in anchored_html
+    assert "[[COF_FORMULA_0]]" in anchored_html
+    assert "[[COF_CODE_0]]" in anchored_html
     assert "<math>x+1</math>" not in anchored_html
     assert "<pre>code</pre>" not in anchored_html
 
@@ -96,15 +96,15 @@ def test_anchor_translate_restore_pipeline():
     # Step 3: Restore
     restored_html = translated_html
     for i, formula in enumerate(formulas):
-        restored_html = restored_html.replace(f"<!--FORMULA_ANCHOR_{i}-->", formula, 1)
+        restored_html = restored_html.replace(f"[[COF_FORMULA_{i}]]", formula, 1)
     for i, code in enumerate(codes):
-        restored_html = restored_html.replace(f"<!--CODE_ANCHOR_{i}-->", code, 1)
+        restored_html = restored_html.replace(f"[[COF_CODE_{i}]]", code, 1)
 
     # Verify restoration
     assert "<math>x+1</math>" in restored_html
     assert "<pre>code</pre>" in restored_html
-    assert "<!--FORMULA_ANCHOR_0-->" not in restored_html
-    assert "<!--CODE_ANCHOR_0-->" not in restored_html
+    assert "[[COF_FORMULA_0]]" not in restored_html
+    assert "[[COF_CODE_0]]" not in restored_html
 
     print("✓ Anchor-translate-restore pipeline test passed")
 

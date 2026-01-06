@@ -2,24 +2,39 @@
   const cof = (globalThis.__cof = globalThis.__cof || {});
   const diag = cof.diag || (() => {});
 
-  const FORMULA_ANCHOR_PREFIX = "<!--FORMULA_ANCHOR_";
-  const CODE_ANCHOR_PREFIX = "<!--CODE_ANCHOR_";
-  const ANCHOR_SUFFIX = "-->";
+  // Use plain-text sentinels instead of HTML comments.
+  // Rationale: many translators treat HTML comments as removable/markup and may drop/mangle them.
+  // Sentinels are designed to be preserved by both MT and LLM providers.
+  const FORMULA_ANCHOR_PREFIX = "[[COF_FORMULA_";
+  const CODE_ANCHOR_PREFIX = "[[COF_CODE_";
+  const ANCHOR_SUFFIX = "]]";
 
   function createAnchor(type, index) {
-    return `<!--${type}_ANCHOR_${index}-->`;
+    return `[[COF_${type}_${index}]]`;
   }
 
   function parseAnchor(anchor) {
-    const match = anchor.match(/<!--(FORMULA|CODE)_ANCHOR_(\d+)-->/);
-    if (!match) return null;
-    return { type: match[1], index: parseInt(match[2], 10) };
+    const s = String(anchor || "");
+
+    // New format: [[COF_FORMULA_12]] / [[COF_CODE_7]]
+    let m = s.match(/^\[\[COF_(FORMULA|CODE)_(\d+)\]\]$/);
+    if (m) return { type: m[1], index: parseInt(m[2], 10) };
+
+    // Legacy format (kept for backward compatibility/tests):
+    // <!--FORMULA_ANCHOR_12--> / <!--CODE_ANCHOR_7-->
+    m = s.match(/^<!--(FORMULA|CODE)_ANCHOR_(\d+)-->$/);
+    if (m) return { type: m[1], index: parseInt(m[2], 10) };
+
+    return null;
   }
 
   function anchorFormulasAndCode(html) {
     const anchors = {
       formulas: [],
       codes: [],
+      // Marker -> index in formulas/codes arrays (order-independent restore)
+      formulaPosByMarker: {},
+      codePosByMarker: {},
     };
     let anchorIndex = 0;
     let result = html;
@@ -28,6 +43,7 @@
     const mathPattern = /<math[\s\S]*?<\/math>/gi;
     result = result.replace(mathPattern, (match) => {
       const anchor = createAnchor("FORMULA", anchorIndex);
+      anchors.formulaPosByMarker[anchor] = anchors.formulas.length;
       anchors.formulas.push(match);
       anchorIndex++;
       return anchor;
@@ -37,6 +53,7 @@
     const latexPattern = /<!--COF_TEX_\d+-->/g;
     result = result.replace(latexPattern, (match) => {
       const anchor = createAnchor("FORMULA", anchorIndex);
+      anchors.formulaPosByMarker[anchor] = anchors.formulas.length;
       anchors.formulas.push(match);
       anchorIndex++;
       return anchor;
@@ -46,6 +63,7 @@
     const dataMathPattern = /<[^>]*\sdata-math=["'][^"']*["'][^>]*>[\s\S]*?<\/[^>]+>/gi;
     result = result.replace(dataMathPattern, (match) => {
       const anchor = createAnchor("FORMULA", anchorIndex);
+      anchors.formulaPosByMarker[anchor] = anchors.formulas.length;
       anchors.formulas.push(match);
       anchorIndex++;
       return anchor;
@@ -56,6 +74,7 @@
     result = result.replace(ommlPattern, (match) => {
       if (match.includes("m:oMath") || match.includes("Equation")) {
         const anchor = createAnchor("FORMULA", anchorIndex);
+        anchors.formulaPosByMarker[anchor] = anchors.formulas.length;
         anchors.formulas.push(match);
         anchorIndex++;
         return anchor;
@@ -67,6 +86,7 @@
     const prePattern = /<pre[\s\S]*?<\/pre>/gi;
     result = result.replace(prePattern, (match) => {
       const anchor = createAnchor("CODE", anchorIndex);
+      anchors.codePosByMarker[anchor] = anchors.codes.length;
       anchors.codes.push(match);
       anchorIndex++;
       return anchor;
@@ -97,6 +117,7 @@
     for (let i = codeMatches.length - 1; i >= 0; i--) {
       const codeMatch = codeMatches[i];
       const anchor = createAnchor("CODE", anchorIndex);
+      anchors.codePosByMarker[anchor] = anchors.codes.length;
       anchors.codes.push(codeMatch.match);
       result = result.substring(0, codeMatch.index) + anchor + result.substring(codeMatch.index + codeMatch.match.length);
       anchorIndex++;
@@ -111,27 +132,48 @@
     let codeIndex = 0;
 
     // Restore formulas
-    const formulaAnchorPattern = /<!--FORMULA_ANCHOR_\d+-->/g;
+    const formulaAnchorPattern = /(?:\[\[COF_FORMULA_\d+\]\]|<!--FORMULA_ANCHOR_\d+-->)/g;
     result = result.replace(formulaAnchorPattern, (match) => {
       const parsed = parseAnchor(match);
       if (!parsed || parsed.type !== "FORMULA") return match;
 
+      const pos =
+        anchors?.formulaPosByMarker && typeof anchors.formulaPosByMarker[match] === "number"
+          ? anchors.formulaPosByMarker[match]
+          : null;
+
+      if (pos != null) {
+        if (translateFormulas && translatedFormulas[pos]) return translatedFormulas[pos];
+        return (anchors.formulas && anchors.formulas[pos]) || match;
+      }
+
+      // Fallback: legacy sequential restore
       if (translateFormulas && translatedFormulas[formulaIndex]) {
         const translated = translatedFormulas[formulaIndex];
         formulaIndex++;
         return translated;
       }
-
       const original = anchors.formulas[formulaIndex];
       formulaIndex++;
       return original || match;
     });
 
     // Restore code blocks
-    const codeAnchorPattern = /<!--CODE_ANCHOR_\d+-->/g;
+    const codeAnchorPattern = /(?:\[\[COF_CODE_\d+\]\]|<!--CODE_ANCHOR_\d+-->)/g;
     result = result.replace(codeAnchorPattern, (match) => {
       const parsed = parseAnchor(match);
       if (!parsed || parsed.type !== "CODE") return match;
+
+      const pos =
+        anchors?.codePosByMarker && typeof anchors.codePosByMarker[match] === "number"
+          ? anchors.codePosByMarker[match]
+          : null;
+
+      if (pos != null) {
+        return (anchors.codes && anchors.codes[pos]) || match;
+      }
+
+      // Fallback: legacy sequential restore
       const original = anchors.codes[codeIndex];
       codeIndex++;
       return original || match;

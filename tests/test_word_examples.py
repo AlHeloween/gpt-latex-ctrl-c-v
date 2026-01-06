@@ -141,8 +141,11 @@ def _word_paste_case(*, payload_json: Path, out_dir: Path, visible: bool) -> dic
         raise RuntimeError("payload JSON missing lastClipboard.cfhtml")
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "cfhtml.original.txt").write_text(cfhtml, encoding="utf-8")
-    (out_dir / "cfhtml.normalized.txt").write_text(normalize_cfhtml_utf8(cfhtml), encoding="utf-8")
+    # Preserve exact newline bytes (CF_HTML typically contains "\r\n").
+    with open(out_dir / "cfhtml.original.txt", "w", encoding="utf-8", newline="") as f:
+        f.write(cfhtml)
+    with open(out_dir / "cfhtml.normalized.txt", "w", encoding="utf-8", newline="") as f:
+        f.write(normalize_cfhtml_utf8(cfhtml))
 
     clip_info = set_clipboard_cfhtml(cfhtml=cfhtml, plain_text=plain, normalize=True)
     _write_json(out_dir / "clipboard_set.json", clip_info)

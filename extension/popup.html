@@ -80,30 +80,23 @@
     Enable translation
   </label>
   <div class="languages-section">
-    <label>Target Languages:</label>
+    <label for="popupActiveTargetLanguage">Active target language:</label>
     <div class="language-select">
-      <select id="popupTargetLanguage1">
-        <option value="">None</option>
-      </select>
+      <select id="popupActiveTargetLanguage"></select>
     </div>
+  </div>
+  <div class="languages-section">
+    <label for="popupTranslationService">Translation model:</label>
     <div class="language-select">
-      <select id="popupTargetLanguage2">
-        <option value="">None</option>
-      </select>
-    </div>
-    <div class="language-select">
-      <select id="popupTargetLanguage3">
-        <option value="">None</option>
-      </select>
-    </div>
-    <div class="language-select">
-      <select id="popupTargetLanguage4">
-        <option value="">None</option>
-      </select>
-    </div>
-    <div class="language-select">
-      <select id="popupTargetLanguage5">
-        <option value="">None</option>
+      <select id="popupTranslationService">
+        <option value="pollinations">Pollinations (Free AI)</option>
+        <option value="google-free">Google Translate (Free)</option>
+        <option value="google">Google Translate</option>
+        <option value="microsoft-free">Microsoft Translator (Free)</option>
+        <option value="microsoft">Microsoft Translator</option>
+        <option value="chatgpt">ChatGPT (OpenAI)</option>
+        <option value="gemini">Gemini (Google)</option>
+        <option value="custom">Custom API</option>
       </select>
     </div>
   </div>

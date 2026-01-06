@@ -182,6 +182,24 @@ class PopupTester:
             """)
         return {}
 
+    async def set_storage_config(self, config: dict) -> bool:
+        """Set storage configuration."""
+        if self.browser_name == "chromium" and self.service_worker:
+            return await self.service_worker.evaluate(
+                """
+                async (cfg) => {
+                    const chrome = globalThis.chrome;
+                    if (!chrome?.storage) return false;
+                    const STORAGE_KEY = "gptLatexCtrlCVConfig";
+                    return new Promise((resolve) => {
+                        chrome.storage.local.set({ [STORAGE_KEY]: cfg }, () => resolve(true));
+                    });
+                }
+                """,
+                config,
+            )
+        return False
+
     async def verify_storage_config(self, expected: dict) -> bool:
         """Verify storage configuration matches expected values."""
         config = await self.get_storage_config()
@@ -272,29 +290,97 @@ class PopupTester:
 
     async def test_language_selection(self) -> bool:
         """Test language selection."""
-        if not await self.open_popup():
-            return False
-        
         try:
-            first_select = await self.popup_page.wait_for_selector("#popupTargetLanguage1", timeout=5000)
-            if not first_select:
-                self.log("Language select #popupTargetLanguage1 not found", "error")
+            ok = await self.set_storage_config({
+                "translation": {
+                    "enabled": False,
+                    "service": "pollinations",
+                    "targetLanguages": ["es", "fr", "de", "", ""],
+                    "translateFormulas": False,
+                    "defaultLanguage": "fr",
+                }
+            })
+            if not ok:
+                self.log("Failed to set storage config", "error")
                 return False
 
-            await first_select.select_option("es")  # Spanish
-            await asyncio.sleep(0.5)  # Wait for storage update
-            
-            # Verify storage updated
-            config = await self.get_storage_config()
-            target_langs = config.get("translation", {}).get("targetLanguages", [])
-            if "es" not in target_langs:
-                self.log("Language not saved to storage", "error")
+            if not await self.open_popup():
                 return False
-            
+
+            select = await self.popup_page.wait_for_selector("#popupActiveTargetLanguage", timeout=5000)
+            if not select:
+                self.log("Language select #popupActiveTargetLanguage not found", "error")
+                return False
+
+            option_values = await self.popup_page.evaluate(
+                """() => Array.from(document.querySelectorAll("#popupActiveTargetLanguage option")).map(o => o.value)"""
+            )
+            if option_values != ["es", "fr", "de"]:
+                self.log(f"Unexpected popup language options: {option_values}", "error")
+                return False
+
+            selected = await select.input_value()
+            if selected != "fr":
+                self.log(f"Unexpected initial selected value: {selected}", "error")
+                return False
+
+            await select.select_option("de")
+            await asyncio.sleep(0.5)  # Wait for storage update
+
+            config = await self.get_storage_config()
+            default_lang = config.get("translation", {}).get("defaultLanguage")
+            if default_lang != "de":
+                self.log(f"defaultLanguage not saved to storage: {default_lang}", "error")
+                return False
+
             self.log("Language selection works", "success")
             return True
         except Exception as e:
             self.log(f"Language selection test failed: {e}", "error")
+            return False
+
+    async def test_translation_service_selection(self) -> bool:
+        """Test translation service (model) selection."""
+        try:
+            ok = await self.set_storage_config({
+                "translation": {
+                    "enabled": True,
+                    "service": "google-free",
+                    "targetLanguages": ["en", "ru", "", "", ""],
+                    "translateFormulas": False,
+                    "defaultLanguage": "ru",
+                }
+            })
+            if not ok:
+                self.log("Failed to set storage config", "error")
+                return False
+
+            if not await self.open_popup():
+                return False
+
+            select = await self.popup_page.wait_for_selector("#popupTranslationService", timeout=5000)
+            if not select:
+                self.log("Service select #popupTranslationService not found", "error")
+                return False
+
+            selected = await select.input_value()
+            if selected != "google-free":
+                self.log(f"Unexpected initial selected service: {selected}", "error")
+                return False
+
+            await select.select_option("microsoft-free")
+            await asyncio.sleep(0.5)  # Wait for storage update
+
+            config = await self.get_storage_config()
+            svc = config.get("translation", {}).get("service")
+            if svc != "microsoft-free":
+                self.log(f"translation.service not saved to storage: {svc}", "error")
+                return False
+
+            self.log("Translation service selection works", "success")
+            return True
+        except Exception as e:
+            self.log(f"Service selection test failed: {e}", "error")
             return False
 
     async def test_settings_link(self) -> bool:
@@ -348,7 +434,13 @@ class PopupTester:
                 self.test_language_selection
             )
             
-            # Test 3: Settings link
+            # Test 3: Translation model selection
+            await self.run_test(
+                "Translation Model Selection",
+                self.test_translation_service_selection
+            )
+            
+            # Test 4: Settings link
             await self.run_test(
                 "Settings Link",
                 self.test_settings_link

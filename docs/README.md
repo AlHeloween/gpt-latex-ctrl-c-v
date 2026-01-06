@@ -3,13 +3,17 @@
 ## Core Documentation
 
 - **Architecture**: [ARCHITECTURE.md](ARCHITECTURE.md) - Comprehensive project architecture, components, and design decisions
-- **Workflow Diagrams**: [../diagram.md](../diagram.md) - Visual diagrams for build, runtime, and testing workflows
+- **Workflow Diagrams**: [diagram.md](diagram.md) - Visual diagrams for build, runtime, and testing workflows
 
 ## Development Guides
 
 - **Publishing**: [AMO_SUBMISSION.md](AMO_SUBMISSION.md) - AMO submission checklist
 - **Testing**: [testing/README.md](testing/README.md) - Testing overview and procedures
 - **Debugging**: [debugging/DEBUGGING.md](debugging/DEBUGGING.md) - Debugging guides and tools
+
+## Reports
+
+- **Reports & Guides**: [reports/](reports/) - Release notes, test summaries, and manual verification guides
 
 ## Policy Documents
 

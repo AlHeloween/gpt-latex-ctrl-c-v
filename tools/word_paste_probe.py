@@ -172,13 +172,12 @@ try {{
   $word.DisplayAlerts = 0
   $doc = $word.Documents.Add()
   try {{
-    # Prefer explicit HTML paste. Word's default Paste() can degrade to plain-text depending on user settings.
+    # Deterministic paste: explicitly request HTML from the system clipboard.
     # WdPasteDataType.wdPasteHTML = 10
-    try {{
-      $word.Selection.PasteSpecial([ref]10)
-    }} catch {{
-      $word.Selection.Paste()
-    }}
+    # Selection.PasteSpecial signature uses positional optional args:
+    # PasteSpecial(IconIndex, Link, Placement, DisplayAsIcon, DataType, IconFileName, IconLabel)
+    $missing = [System.Type]::Missing
+    $word.Selection.PasteSpecial($missing, $missing, $missing, $missing, 10)
     $doc.SaveAs([ref]$out, [ref]16)
   }} finally {{
     if ($doc) {{
@@ -254,8 +253,13 @@ def main() -> int:
         plain = " "
 
     normalized = normalize_cfhtml_utf8(cfhtml)
-    (out_dir / "cfhtml.normalized.txt").write_text(normalized, encoding="utf-8")
-    (out_dir / "cfhtml.original.txt").write_text(cfhtml, encoding="utf-8")
+    # Preserve exact newline bytes (CF_HTML typically contains "\r\n").
+    def _write_text_exact(path: Path, text: str) -> None:
+        with open(path, "w", encoding="utf-8", newline="") as f:
+            f.write(text)
+
+    _write_text_exact(out_dir / "cfhtml.normalized.txt", normalized)
+    _write_text_exact(out_dir / "cfhtml.original.txt", cfhtml)
     clip_info = set_clipboard_cfhtml(cfhtml=cfhtml, plain_text=plain, normalize=not bool(args.no_normalize))
     (out_dir / "clipboard_set.json").write_text(json.dumps(clip_info, indent=2), encoding="utf-8")
 

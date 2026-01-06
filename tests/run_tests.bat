@@ -13,7 +13,7 @@ echo.
 echo Note: Without --fast, Windows runs real clipboard tests and overwrites your clipboard.
 echo.
 
-uv run python run_all.py %*
+uv run python run_all.py --include-large %*
 set TESTS_ERRORLEVEL=%ERRORLEVEL%
 
 popd

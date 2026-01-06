@@ -49,7 +49,7 @@ uv run python tests/test_translation_integration.py
 - Tests actual anchoring module with real HTML
 - Tests actual analysis module with real content
 - Tests Google Translate free endpoint (real API call - no API key needed)
-- Tests Pollinations API (real API call)
+- Tests Pollinations API (real API call; works without a key but is rate-limited/slower)
 - Tests full translation pipeline
 
 **Run real tests:**
@@ -58,6 +58,10 @@ Without API keys (free services only):
 ```bash
 node tests/test_translation_real.js
 ```
+
+Pollinations note:
+- Without a key, the code uses the legacy `https://text.pollinations.ai/openai` endpoint (rate-limited; chunked more aggressively).
+- With a key, it uses `https://gen.pollinations.ai/v1/chat/completions` (faster/more reliable).
 
 With API keys from keyring (tests ChatGPT, Gemini, etc.):
 ```bash
