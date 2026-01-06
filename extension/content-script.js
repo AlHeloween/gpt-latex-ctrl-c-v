@@ -25,11 +25,74 @@
 
   function plainTextFromHtmlFragment(html) {
     try {
-      const container = document.createElement("div");
-      container.innerHTML = String(html || "");
-      // innerText preserves line breaks better than textContent for <pre>/<br>.
-      const t = container.innerText || container.textContent || "";
-      return String(t || "");
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(String(html || ""), "text/html");
+      const root = doc?.body || doc?.documentElement;
+      if (!root) return "";
+
+      const out = [];
+      const blockTags = new Set([
+        "P",
+        "DIV",
+        "SECTION",
+        "ARTICLE",
+        "HEADER",
+        "FOOTER",
+        "H1",
+        "H2",
+        "H3",
+        "H4",
+        "H5",
+        "H6",
+        "UL",
+        "OL",
+        "LI",
+        "TABLE",
+        "THEAD",
+        "TBODY",
+        "TFOOT",
+        "TR",
+        "TD",
+        "TH",
+        "PRE",
+        "BLOCKQUOTE",
+      ]);
+
+      const pushNewline = () => {
+        const last = out.length ? out[out.length - 1] : "";
+        if (!last.endsWith("\n")) out.push("\n");
+      };
+
+      const walk = (node) => {
+        if (!node) return;
+        if (node.nodeType === Node.TEXT_NODE) {
+          out.push(String(node.nodeValue || ""));
+          return;
+        }
+        if (node.nodeType !== Node.ELEMENT_NODE) return;
+        const el = node;
+        const tag = String(el.tagName || "").toUpperCase();
+
+        if (tag === "BR") {
+          out.push("\n");
+          return;
+        }
+        if (tag === "PRE") {
+          pushNewline();
+          out.push(String(el.textContent || ""));
+          pushNewline();
+          return;
+        }
+
+        const isBlock = blockTags.has(tag);
+        if (isBlock) pushNewline();
+        for (const child of Array.from(el.childNodes || [])) walk(child);
+        if (isBlock) pushNewline();
+      };
+
+      walk(root);
+      // Collapse excessive blank lines; keep output stable for clipboard text/plain.
+      return out.join("").replace(/\n{3,}/g, "\n\n").trim();
     } catch (_e) {
       return "";
     }

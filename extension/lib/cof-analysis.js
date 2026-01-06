@@ -31,10 +31,17 @@
   }
 
   function filterRealWords(text) {
-    // Remove HTML entities
-    const textarea = document.createElement("textarea");
-    textarea.innerHTML = text;
-    let cleanText = textarea.value;
+    // Decode common HTML entities without using innerHTML.
+    // Note: inputs often already come from DOMParser.textContent (entities decoded), but keep this
+    // for robustness when called with raw text.
+    let cleanText = String(text || "");
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(`<!doctype html><body>${cleanText}</body>`, "text/html");
+      cleanText = doc.body?.textContent || cleanText;
+    } catch (e) {
+      // ignore
+    }
 
     // Extract words (alphanumeric sequences, at least 2 characters)
     const words = cleanText
