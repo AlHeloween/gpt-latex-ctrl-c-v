@@ -2,26 +2,31 @@
 
 ## Overview
 
-Version 0.2.0 introduces comprehensive translation capabilities, enhanced UI with browser action popup, and full language support with 269 languages from TWP (Translate Web Pages).
+Version 0.2.0 introduces translation-on-copy, an icon popup for quick translation settings, and a deterministic copy pipeline for Office-friendly HTML plus real Word equations (MathML → OMML on paste).
 
 ## New Features
 
 ### Translation on Copy
-- **Translation on Ctrl-C**: Automatically translate selected content before copying to clipboard
-- **Multiple Translation Services**: Support for 8 different translation services:
-  - Pollinations (Free AI) - Default, no API key required
-  - Google Translate (Free) - Web endpoint, no API key required
+- **Copy as Office Format + Translate**: Translate selected HTML before converting to Office HTML.
+- **Translation on Ctrl-C (optional)**: Intercept Ctrl-C (when enabled) and run the same deterministic translation pipeline.
+- **Multiple Translation Services**:
+  - Pollinations (Free AI) - default; no API key required (legacy endpoint; serialized requests; aggressive chunking)
+  - Google Translate (Free) - web endpoint; no API key required (chunked; POST avoids URL 413)
   - Google Translate (Paid) - API key required
-  - Microsoft Translator (Free) - Web endpoint, no API key required
+  - Microsoft Translator (Free) - web endpoint; no API key required (Edge token + api-edge translate)
   - Microsoft Translator (Paid) - API key required
   - ChatGPT (OpenAI) - API key required
-  - Gemini (Google) - API key required
-  - Custom API - Fully configurable endpoint
+  - Gemini (Google) - API key required (v1beta preferred; fallback to v1 to avoid “model not found” 404)
+  - Custom API - configurable endpoint/method/headers/payload
 
 ### Content Protection
 - **Formula Anchoring**: Automatically protects LaTeX/MathML formulas from translation
 - **Code Block Protection**: Preserves code blocks during translation
 - **Smart Restoration**: Formulas and code are restored after translation completes
+
+### Progress + Debugging
+- Deterministic progress signals per chunk (stage + progress JSON stored in DOM dataset keys and logged via `[GPT LATEX Ctrl-C Ctrl-V] translationDebug ...`).
+- Fail-open behavior for Office copy: if translation fails, the original selection is still copied.
 
 ### Content Analysis
 - **Semantic Embeddings**: Analyzes content for better translation context
@@ -31,12 +36,11 @@ Version 0.2.0 introduces comprehensive translation capabilities, enhanced UI wit
 ### Browser Action Popup
 - **Quick Access**: Click extension icon for instant translation settings
 - **Enable/Disable Toggle**: Quickly turn translation on/off
-- **5 Target Languages**: Select up to 5 target languages directly from popup
+- **5 Target Languages**: Select up to 5 target languages directly from popup (English is default)
 - **Advanced Settings Link**: Direct access to full options page
 
 ### Language Support
-- **269 Languages**: Full language list from TWP (Translate Web Pages)
-- **Alphabetical Sorting**: Easy-to-navigate language dropdowns
+- **Language list UI**: Easy-to-navigate dropdowns and 5 favorite languages in the popup
 - **Multiple Target Languages**: Support for translating to up to 5 languages simultaneously
 - **Default Language**: Configurable default target language
 
@@ -49,6 +53,7 @@ Version 0.2.0 introduces comprehensive translation capabilities, enhanced UI wit
   - Custom API: Full HTTP method, headers, and endpoint configuration
 - **Import/Export**: Backup and restore configuration
 - **Formula Translation**: Option to translate formulas (AI services only)
+- **Debug logs toggle**: Enable/disable debug logs (default is off)
 
 ## Improvements
 
@@ -87,6 +92,10 @@ Version 0.2.0 introduces comprehensive translation capabilities, enhanced UI wit
 - Supports standard translation APIs (OpenAI, Google Gemini)
 - Custom API support for enterprise/self-hosted solutions
 
+### Clipboard accuracy
+- “Copy selection HTML” writes the selected HTML fragment as `text/html` exactly (no Office wrappers, no normalization).
+- Office copy ensures both `text/html` and `text/plain` are consistent (plain-text paste targets receive translated text when translation is enabled).
+
 ## Browser Compatibility
 
 ### Firefox
@@ -96,8 +105,8 @@ Version 0.2.0 introduces comprehensive translation capabilities, enhanced UI wit
 
 ### Chromium (Chrome, Edge, etc.)
 - **Manifest Version**: 3
-- **Format**: Unpacked extension directory
-- **Note**: Translation features require additional testing on Chromium
+- **Format**: Unpacked extension directory / ZIP bundle
+- **Status**: Translation pipeline is wired and covered by automated Chromium extension tests
 
 ## Installation
 
@@ -130,9 +139,8 @@ Version 0.2.0 introduces comprehensive translation capabilities, enhanced UI wit
 
 ## Known Limitations
 
-- **Chromium Translation**: Translation features may require additional testing on Chromium-based browsers
 - **Formula Translation**: Only available with AI services (ChatGPT, Gemini, Pollinations)
-- **Free Services**: Google/Microsoft free endpoints may have rate limits
+- **Free Services**: Pollinations/Google/Microsoft free endpoints can be rate-limited
 - **Language Codes**: Some language codes may need conversion for specific APIs
 
 ## Migration from Previous Versions
@@ -161,6 +169,6 @@ Version 0.2.0 introduces comprehensive translation capabilities, enhanced UI wit
 ---
 
 **Version**: 0.2.0  
-**Release Date**: 2025-01-XX  
-**Build**: Firefox XPI + Chromium Extension
+**Release Date**: 2026-01-06  
+**Build**: Firefox XPI + Chromium (MV3) bundle/zip
 
