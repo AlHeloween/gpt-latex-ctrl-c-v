@@ -236,7 +236,7 @@ browserApi.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (DEBUG) {
       log("Extension ready notification received from content script");
     }
-    sendResponse({ status: "ready", version: "0.2.0" });
+    sendResponse({ status: "ready", version: "0.2.1" });
     return true; // Keep channel open for async response
   }
 

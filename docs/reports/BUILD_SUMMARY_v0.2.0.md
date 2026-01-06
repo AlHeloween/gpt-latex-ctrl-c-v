@@ -11,7 +11,7 @@
 ### Firefox Extension
 - **File**: `dist/gpt-latex-ctrl-c-v.xpi`
 - **Manifest Version**: 2
-- **Extension ID**: `gpt-latex-ctrl-c-v@alheloween`
+- **Extension ID**: `gpt-latex-ctrl-c-v@example`
 - **Minimum Firefox Version**: 142.0
 - **Format**: ZIP archive (XPI)
 

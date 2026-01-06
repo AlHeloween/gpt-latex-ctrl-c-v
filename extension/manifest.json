@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "GPT LATEX Ctrl-C Ctrl-V",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Copy browser selections to clipboard in Office-compatible format, preserving formatting and converting LaTeX formulas to Microsoft Equation (OMML) format.",
   "permissions": ["contextMenus", "activeTab", "clipboardWrite", "storage", "downloads", "<all_urls>"],
   "background": { "scripts": ["background.js"], "persistent": false },
@@ -48,7 +48,7 @@
   },
   "browser_specific_settings": {
     "gecko": {
-      "id": "gpt-latex-ctrl-c-v@alheloween",
+      "id": "gpt-latex-ctrl-c-v@example",
       "strict_min_version": "142.0",
       "data_collection_permissions": {
         "required": ["none"],

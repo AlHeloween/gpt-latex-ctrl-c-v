@@ -15,7 +15,7 @@ This guide provides step-by-step instructions for manually verifying the extensi
 3. Click "This Firefox" in the left sidebar
 4. Click "Load Temporary Add-on..."
 5. Navigate to the project directory and select `extension/manifest.json`
-6. Verify the extension appears in the list with ID: `gpt-latex-ctrl-c-v@alheloween`
+6. Verify the extension appears in the list with ID: `gpt-latex-ctrl-c-v@example`
 
 ## Step 2: Test Basic Copy Functionality
 

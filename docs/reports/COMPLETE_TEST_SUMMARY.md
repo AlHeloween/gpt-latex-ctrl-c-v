@@ -86,7 +86,7 @@ Content script is **38.9% under** the 20KB limit.
 
 - ✅ **WASM**: `extension/wasm/tex_to_mathml.wasm` (built successfully)
 - ✅ **XPI**: `dist/gpt-latex-ctrl-c-v.xpi` (built successfully)
-- ✅ **Extension ID**: `gpt-latex-ctrl-c-v@alheloween` (verified in manifest)
+- ✅ **Extension ID**: `gpt-latex-ctrl-c-v@example` (verified in manifest)
 
 ## Test Files Status
 

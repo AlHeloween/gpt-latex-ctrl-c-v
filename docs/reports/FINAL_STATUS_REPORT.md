@@ -40,7 +40,7 @@ All testing plan tasks have been completed successfully. The extension is ready 
 - ✅ Content script: 12,225 bytes (under 20KB limit)
 
 ### 10. AMO Checklist
-- ✅ Extension ID verified: `gpt-latex-ctrl-c-v@alheloween`
+- ✅ Extension ID verified: `gpt-latex-ctrl-c-v@example`
 - ✅ Privacy policy: `docs/PRIVACY.md`
 - ✅ Permissions documented: `docs/AMO_SUBMISSION.md`
 - ✅ WASM built successfully

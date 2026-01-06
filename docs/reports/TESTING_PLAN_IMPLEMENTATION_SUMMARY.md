@@ -88,7 +88,7 @@ This document summarizes the implementation of the comprehensive testing plan fo
 ### 10. AMO Submission Readiness ✅
 - **Status**: In Progress
 - **Completed Items**:
-  - ✅ Extension ID verified: `gpt-latex-ctrl-c-v@alheloween`
+  - ✅ Extension ID verified: `gpt-latex-ctrl-c-v@example`
   - ✅ Privacy policy exists: `docs/PRIVACY.md`
   - ✅ Permissions documented: `docs/AMO_SUBMISSION.md`
   - ✅ WASM built successfully
@@ -136,7 +136,7 @@ uv run python tools/check_js_size.py
 ## AMO Submission Checklist Status
 
 ### ✅ Completed
-- [x] Extension ID set: `gpt-latex-ctrl-c-v@alheloween`
+- [x] Extension ID set: `gpt-latex-ctrl-c-v@example`
 - [x] Privacy policy: `docs/PRIVACY.md` exists and covers translation API usage
 - [x] Permissions documented: `docs/AMO_SUBMISSION.md` explains all permissions
 - [x] WASM built: `uv run python tools/build_rust_wasm.py` completed successfully
